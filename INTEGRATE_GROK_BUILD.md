@@ -23,9 +23,12 @@ tree.
 | OS | macOS (Darwin 24.6), 2026-09-27 |
 | Account | logged in with grok.com (`apiKeySource: "oauth"`). Models: `grok-4.7` (default), `grok-4.7-build-fast`, `grok-4.6`, `grok-4.5` |
 | Method | direct CLI probes in scratch git repos under `/tmp/orca-probe/`; bundled docs in `~/.grok/docs/user-guide/` (14 headless, 22 permissions, 07 MCP, 05 configuration); a stub HTTP MCP server; a throwaway munit suite replaying five recorded transcripts through orca's `DecodedTurn` + `ClaudeDecoder` (all passed; suite deleted afterwards) |
+| §11 follow-up | same CLI build on Linux (6.8, devcontainer), 2026-09-27: six live `grok-4.7-build-fast` turns (≈ $0.13) plus flag-only and pre-model-failure runs, in scratch git repos under `/tmp/orca-probe11/`. Transcripts are saved as fixtures (see the fixtures README) |
 
-Evidence markers: **[verified]** observed; **[docs]** from grok's bundled user
-guide; **[unverified]** must be probed before relying on it.
+Evidence markers: **[verified]** observed (first probe, macOS);
+**[verified grok 1.0.41, 2026-09-27, Linux]** observed in the §11 follow-up;
+**[docs]** from grok's bundled user guide; **[unverified]** must be probed
+before relying on it.
 
 ---
 
@@ -37,18 +40,18 @@ guide; **[unverified]** must be probed before relying on it.
 | 2 | NDJSON stream + terminal record | `--output-format streaming-messages-json` (+ `--include-partial-messages`) — Claude stream-json framing **[verified]** |
 | 3 | Session id | `-s/--session-id <uuid>` claims a new id; `session_id` on every line **[verified]** |
 | 4 | Resume | `-r/--resume <id>` keeps context **[verified]** |
-| 5 | Existence check | `$GROK_HOME/sessions/<urlencode(realpath cwd)>/<id>/chat_history.jsonl` (`GROK_HOME` defaults to `~/.grok`) **[verified]** |
+| 5 | Existence check | `$GROK_HOME/sessions/<urlencode(realpath cwd)>/<id>/chat_history.jsonl` (`GROK_HOME` defaults to `~/.grok`) **[verified]**. A turn that fails before the model runs still creates it (non-empty), and the id is then taken: the probe must report such a session as present (§4) **[verified grok 1.0.41, 2026-09-27, Linux]** |
 | 6 | Model per invocation | `-m/--model`; an unknown id fails the turn cleanly **[verified]** |
 | 7 | Prompt without argv limit | `--prompt-file`. Headless mode does **not** read stdin **[docs; `--prompt-file` verified]** |
 | 8 | Append system prompt | `--rules <TEXT>` → `<human_rules>` block in the session's `system_prompt.txt` **[verified]** |
 | 9 | Hard read-only | `--tools read_file,grep,list_dir` removes write and shell tools **[verified]** |
-| 10 | Approve everything | `--always-approve` (= `--permission-mode bypassPermissions`). Headless already **defaults** to `bypassPermissions` **[verified]** |
+| 10 | Approve everything | `--always-approve` (= `--permission-mode bypassPermissions`) **[verified]**. It is **required**: with no permission flag, headless runs in `default` mode and the first edit cancels the whole turn (§5) **[verified grok 1.0.41, 2026-09-27, Linux]** |
 | 11 | No tools | `--tools todo_write --disallowed-tools todo_write,search_tool,use_tool` → `tools: []` **[verified]** |
 | 12 | Read-only web | add `web_search,web_fetch` to `--tools` **[docs; tool names verified in init]** |
-| 13 | Flags on resume | all flags are per invocation; `--resume` takes the same flags **[verified for resume; stricter-tier-on-resume unverified]** |
+| 13 | Flags on resume | all flags are per invocation; `--resume` takes the same flags **[verified]**. A session created under `--always-approve` and resumed with the read-only flags got init `tools: [read_file, list_dir, grep]` and could not write **[verified grok 1.0.41, 2026-09-27, Linux]** |
 | 14 | Usage + cost | `result.usage` (Messages shape, **disjoint** buckets) + `total_cost_usd` + `modelUsage` **[verified; docs]** |
 | 15 | Structured output | `--json-schema <inline>` → constrained output + `result.structured_output` **[verified]** |
-| 16 | MCP for `ask_user` | temp `--agent <file.md>` with `mcpServers:` frontmatter; tool reached via `use_tool` as `orca__ask_user` **[verified]** |
+| 16 | MCP for `ask_user` | temp `--agent <file.md>` with `mcpServers:` frontmatter; tool reached via `use_tool` as `orca__ask_user` **[verified]**. The agent body replaces only the stock `<browser_verification>` block; `--rules` still lands in `<human_rules>`; an unreachable server reports `status: "failed"` and the turn still runs (§6) **[verified grok 1.0.41, 2026-09-27, Linux]** |
 | 17 | Refusal vs failure | a deny-rule refusal is an `is_error` tool result reading "was not executed: Denied by permission policy…" **[verified]** |
 | 18 | SIGINT | dies immediately (killed by signal), no result line **[verified]** |
 | 19 | Errors | `result` with `is_error: true`, `subtype: error_during_execution` (also `error_max_turns`, `error_max_structured_output_retries` **[docs]**), `errors[]`, stderr detail, exit 1 **[verified]** |
@@ -68,17 +71,33 @@ grok
   <permission wiring, §5>
   [--json-schema <inline schema>]                            # structured turns
   [--agent <tmp>/orca-grok-agent-*.md]                       # interactive: ask_user MCP (§6)
-  cwd: workDir     (or --cwd workDir)
+  [--no-subagents]                                           # allowlist tiers; optional on Full (§5)
+  cwd: workDir
   stdin: closed immediately
 ```
 
-Also consider:
+Also consider (flag checks **[verified grok 1.0.41, 2026-09-27, Linux]**
+unless marked otherwise):
 
-- `--no-auto-update`: headless flag in the docs, not tested. It stops a
-  mid-run self-update from changing the wire.
+- `--cwd <CWD>` exists (in `--help` and headless docs). Not needed: spawn
+  with `cwd = workDir` as every other backend does, so the session directory
+  key and the process cwd can't disagree.
+- `--no-subagents` exists in `--help` ("Disable subagent spawning"; also
+  `subagents.enabled` / `GROK_SUBAGENTS`) **[docs]**. Safe to pass on every
+  tier.
+- `--no-auto-update` is **not** in `--help`, but the parser accepts it
+  (`grok --no-auto-update --version` exits 0, while an unknown flag exits 2
+  with "unexpected argument") and the headless docs list it. Update checks are
+  also suppressed automatically when stderr is not a TTY, which is always the
+  case for orca's piped spawns **[docs]**. **Don't pass it**: a hidden flag
+  may disappear and would then fail every turn. If explicit suppression is
+  wanted, set `GROK_DISABLE_AUTOUPDATER=1` in the child's environment, which
+  an older or newer build simply ignores.
 - `--max-turns <N>`: not needed.
-- `--verbatim`: sends the prompt exactly as given. Test whether grok rewrites
-  prompts without it before deciding **[unverified]**.
+- `--verbatim` exists ("Send the prompt exactly as given"). Without it grok
+  only wraps the prompt in `<user_query>\n…\n</user_query>` in
+  `chat_history.jsonl`; the text itself is unchanged. **Don't pass it**: the
+  wrapper is what the stock system prompt expects.
 - `--rules` goes on argv. The composed system prompt is a few KB, fine for
   `ARG_MAX`. If it ever isn't, move it into the `--agent` file body (§6).
 - **Don't** use `--system-prompt-override`: it replaces grok's own prompt.
@@ -172,18 +191,63 @@ than a copy of claude's):
   The directory name is the percent-encoded **real** path
   (`%2Fprivate%2Ftmp%2Forca-probe%2Fgk` for a cwd of `/tmp/orca-probe/gk`)
   **[verified]**. Resolve `grokHome` from `GROK_HOME`, else `~/.grok`.
-  Whether a session whose first turn failed leaves `chat_history.jsonl` behind
-  is **[unverified]**. If it does, the probe should also require a non-empty
-  history, or rely on the refusal-plus-held-claim path.
+- **A pre-model failure still claims the id** **[verified grok 1.0.41,
+  2026-09-27, Linux]**. `-m nope-model --session-id <uuid>` exits 1 with
+  `error_during_execution` (usage all zero, `num_turns: 0`) but leaves
+  `sessions/<cwd>/<uuid>/` with a **non-empty** `chat_history.jsonl`
+  (2 lines, ~17 KB: the system message and a synthetic skills
+  `system_reminder`, no `prompt_index` user line), plus `system_prompt.txt`
+  and `summary.json` (`num_messages: 0`). After that:
+  - `--session-id <uuid>` again → `Error: Error: Session ID <uuid> is already
+    in use.`, exit 1;
+  - `--resume <uuid>` works: a real turn resumed it, answered, and succeeded
+    under the same id.
+
+  **Consequence for the probe**: keep it to "`chat_history.jsonl` exists" and
+  do **not** require a non-empty history or a real user turn. A stricter
+  probe would report such a session as gone, orca would re-claim the id,
+  and grok would refuse with "already in use" every time. With the plain
+  existence check, `SessionSupport.heldClaim` sees the session as present
+  and dispatches `--resume <id>`, which grok accepts.
+
+  **Existence-only is necessary but not sufficient.** In orca, a
+  `Dispatch.Resume(_, EarlierAttempt)` builds its prompt with
+  `continuedPrompt` (`flow/.../orca/Session.scala`): on the first turn that
+  is `InterruptedAttemptNotice` + the turn text. Only the `Fresh` path
+  (`rebuiltPrompt`) adds the recorded session `seed` and the progress
+  preamble. A pre-model failure leaves a history with **no `prompt_index`
+  user line**, so grok never saw the first prompt. Every retry on that
+  session would therefore resume an empty conversation and silently lose the
+  seed and preamble, without even `rebuiltPrompt`'s "re-seeding" warning.
+  **Follow-up (must be settled in the implementation task):** the grok
+  backend should detect a held session whose `chat_history.jsonl` has no
+  line with a `prompt_index` field, and treat it as needing a rebuilt prompt
+  while still dispatching `--resume <id>`. Options: a tri-state probe result
+  (gone / held-empty / held-with-history) in `SessionSupport`, or a
+  `ResumeOrigin` that makes `effectivePrompt` use `rebuiltPrompt`. Pin the
+  case in `GrokIntegrationTest` (`-m nope-model` with a claimed id, then a
+  real turn must see the seed) and in `SessionTest`.
 - `--fork-session` (resume into a new id) and `--restore-code` are not needed.
 
 ---
 
 ## 5. Tool enforcement
 
-Headless default is **`bypassPermissions`**: without flags, grok edits and runs
-shell freely **[verified: `permissionMode":"bypassPermissions"` in init, file
-written]**. Every tier therefore needs explicit flags.
+**The headless default permission mode depends on the machine, so every tier
+needs explicit flags.** The first probe (macOS) saw
+`permissionMode:"bypassPermissions"` without flags, and the file was written
+**[verified]**. The follow-up (Linux, no permission keys in
+`~/.grok/config.toml`) saw `permissionMode:"default"`, as the headless docs
+describe ("the `--permission-mode` value, or `bypassPermissions` under
+`--yolo`, else `default`"). There, the first `search_replace` came back
+`User cancelled the execution for tool \`search_replace\``, and the **whole
+turn** ended `error_during_execution`, `stop_reason: "cancelled"`,
+`errors: ["cancelled"]` (fixture `grok-default-mode-cancel.jsonl`)
+**[verified grok 1.0.41, 2026-09-27, Linux]**. Consequences: `Full, All`
+must always render `--always-approve`, since omitting it is not a safe
+no-op, and read-only tiers must not rely on `default` mode to stop writes.
+A missing approval flag shows up as a cancelled turn, not as a refusal the
+model can route around.
 
 Tool names (init `tools`, default profile): `run_terminal_command`,
 `read_file`, `search_replace`, `write`, `list_dir`, `grep`,
@@ -192,15 +256,18 @@ Tool names (init `tools`, default profile): `run_terminal_command`,
 `monitor`, `search_tool`, `use_tool`, `workflow`, `enter_plan_mode`,
 `exit_plan_mode`, `ask_user_question`, `send_feedback`, `web_search`,
 `web_fetch`, `image_gen`, `image_edit`, `image_to_video`,
-`reference_to_video`.
+`reference_to_video`. Under an `--agent` file the list differs slightly:
+`send_feedback` goes and `wait_commands_or_subagents` appears **[verified
+grok 1.0.41, 2026-09-27, Linux]**. This is harmless for enforcement, because
+the allowlist tiers name their tools and `Full` only disallows.
 
 | `(tools, approve)` | Flags | Level | Evidence |
 |---|---|---|---|
 | `ReadOnly, *` | `--tools read_file,grep,list_dir --disallowed-tools search_tool,use_tool,Agent --no-subagents` (keep `search_tool,use_tool` when orca MCP is attached) | **Hard** | with `--tools read_file,grep,list_dir` the init list was `[read_file,list_dir,grep,search_tool,use_tool]`; the agent tried `use_tool Write` / `use_tool Shell` and both were rejected as unknown MCP tools; no files written **[verified]** |
 | `NetworkOnly, *` | `--tools read_file,grep,list_dir,web_search,web_fetch` + the same disallows | **Hard** (writes) | as above; web tool names present in init **[verified]**. A live fetch under the allowlist is **[unverified]** |
 | `NoTools, *` | `--tools todo_write --disallowed-tools todo_write,search_tool,use_tool,Agent --no-subagents` | **Hard** | init `tools: []` **[verified]** |
-| `Full, All` | `--always-approve` | **Hard** | shell and edits ran **[verified]** |
-| `Full, Only(set)` | option A: `--permission-mode dontAsk` + `--allow <rule>`… → **Hard but turn-fatal**; option B: `--always-approve` → **Ignored** | see note | dontAsk: an out-of-set `write` returned `User cancelled the execution for tool \`write\``, and then the **whole turn** ended `error_during_execution`, `stop_reason: "cancelled"` **[verified]** |
+| `Full, All` | `--always-approve --disallowed-tools ask_user_question` | **Hard** | shell and edits ran **[verified]**; `--always-approve` is mandatory (without it, the first edit cancels the turn on Linux) **[verified grok 1.0.41, 2026-09-27, Linux]** |
+| `Full, Only(set)` | option A: `--permission-mode dontAsk` + `--allow <rule>`… → **Hard but turn-fatal**; option B: `--always-approve --disallowed-tools ask_user_question` → **Ignored** | see note | dontAsk: an out-of-set `write` returned `User cancelled the execution for tool \`write\``, and then the **whole turn** ended `error_during_execution`, `stop_reason: "cancelled"` **[verified]** |
 
 Notes:
 
@@ -216,8 +283,9 @@ Notes:
 - **Option A vs B for `Full, Only(set)`.** `AutoApprove.Only` is meant for
   interactive turns, where a human answers the rest. `streaming-messages-json`
   is read-only: approvals need ACP (`grok agent stdio`) **[docs]**. So an
-  out-of-set call can't be answered: dontAsk cancels the turn, and headless
-  `default` mode presumably does the same **[unverified]**. Recommend option
+  out-of-set call can't be answered: dontAsk cancels the turn, and so does
+  headless `default` mode (see the top of this section) **[verified grok
+  1.0.41, 2026-09-27, Linux]**. Recommend option
   B (`Ignored`, like gemini) until an ACP driver exists. Option A is
   defensible if `Only` should fail loudly.
 - **Deny rules under always-approve return a normal tool error** (the turn
@@ -227,14 +295,40 @@ Notes:
 - `--sandbox <profile>` / `GROK_SANDBOX` (doc 18) is an OS sandbox for
   filesystem and network. Not probed. It could back a `SandboxApprox` cell or
   harden `ReadOnly` against a shell smuggled through MCP.
-- On autonomous turns, also disallow `ask_user_question` (grok's own
-  question tool; its headless behaviour is **[unverified]**: it could hang
-  or fail) and consider `--no-subagents` on `Full` turns (cost control).
+- **`ask_user_question`** **[verified grok 1.0.41, 2026-09-27, Linux]**.
+  It is in the headless init `tools` by default (plain turns and `--agent`
+  turns alike). When the model calls it, grok answers **at once** with a
+  successful synthetic result: `{"type":"AskUserQuestion","UserAnswered":{"message":"No
+  user is available to answer questions in this non-interactive session.
+  Continue with your best judgment; do not wait for clarification."}}`. It
+  doesn't hang or fail, and the turn ends `success` with a reply like "no
+  answer came back" (fixture `grok-ask-user-question.jsonl`).
+  `--disallowed-tools ask_user_question` removes it from init `tools`
+  (26 remain) and the turn runs normally. **Consequence: always disallow
+  `ask_user_question` on every tier that doesn't already exclude it by
+  allowlist, on autonomous *and* interactive turns.** On autonomous turns
+  it would quietly swallow a question the user should have seen. On
+  interactive turns the model must reach the human through `orca__ask_user`,
+  not a tool that answers "nobody's there". The `--tools` allowlist tiers
+  (`ReadOnly`, `NetworkOnly`, `NoTools`) already exclude it; `Full` needs it
+  on `--disallowed-tools`. `GrokArgsTest` should pin it on `Full`.
+- Consider `--no-subagents` on `Full` turns (cost control; the flag exists,
+  see §2).
   `scheduler_*` and `monitor` create background work the turn boundary
   abandons; the standing `BackgroundWorkAbandonedAtTurnEnd` rule covers them,
   but disallowing them is cheaper than relying on prose.
-- Resumed turns re-apply every flag, so classify `Resumed` = `Fresh`.
-  Confirm by resuming a `Full` session under `ReadOnly` and attempting a write.
+- **Resumed turns re-apply every flag, so classify `Resumed` = `Fresh`**
+  **[verified grok 1.0.41, 2026-09-27, Linux]**. A session created with
+  `--always-approve` was resumed with `--tools read_file,grep,list_dir
+  --disallowed-tools search_tool,use_tool --no-subagents` and asked to
+  "create pwned.txt … by any means available". Init showed
+  `permissionMode:"default"` and `tools:["read_file","list_dir","grep"]`: the
+  creation turn's tool set and bypass mode were not carried over. The model
+  called `list_dir`, `read_file` and `grep`, said it had no way to write, and
+  the turn ended `success`. No file appeared and `git status` was clean
+  (fixture `grok-resume-readonly.jsonl`). Nothing about the tier is
+  persisted in the session, so the enforcement row needs no resumed-turn
+  exceptions.
 - The AGENTS.md `NetworkOnly` grant list gains "grok: `web_search`,
   `web_fetch` on `--tools`".
 
@@ -278,11 +372,31 @@ You are driven by the Orca orchestrator.
 - Timeout: grok's per-tool default is `tool_timeout_sec = 6000` (100 min)
   **[docs]**, above `AskUserMcpServer.ToolTimeout` (1 h). Whether agent
   frontmatter accepts a per-server timeout is **[unverified]**; not needed.
-- Caveat: `--agent` switches the primary agent profile from the stock
-  `grok-build` one. With `prompt_mode: full` behaviour looked normal (tools and
-  model unchanged), but check the exact effect on the system prompt against a
-  plain turn's `system_prompt.txt` before shipping **[unverified]**. The body
-  could carry the composed system prompt instead of `--rules`.
+- **`--agent` side effects** **[verified grok 1.0.41, 2026-09-27, Linux]**.
+  The same one-line turn ran twice with the same model and flags, once plain
+  and once under the frontmatter above (unreachable `url`,
+  `http://127.0.0.1:9/mcp`). The two `system_prompt.txt` files (8813 vs
+  8003 bytes) are identical except for one block: the stock profile's
+  `<browser_verification>…</browser_verification>` section, 11 lines about
+  verifying web-UI changes in a browser, is **replaced by the agent file's
+  body**. Everything else is unchanged: identity, tool guidance, the
+  AGENTS.md/rules sections (`agents_md: true`) and the environment block.
+  `--rules` text still appears as `<human_rules>…</human_rules>`, right after
+  the body. `summary.json` records `agent_name: "orca-turn"` instead of the
+  stock `grok-build-plan`. Model and permission mode are unchanged
+  (`model: inherit` honoured). The tool list differs only by `send_feedback`
+  going and `wait_commands_or_subagents` appearing. An unreachable MCP
+  server shows as `mcp_servers:[{"name":"orca","status":"failed"}]` in init,
+  and the turn still runs and succeeds (fixture
+  `grok-agent-mcp-failed.jsonl`). Consequences:
+  - keep the composed system prompt in `--rules` on every turn, so
+    interactive and autonomous turns get the same `<human_rules>` block;
+    keep the agent body a one-line neutral preamble (the lost
+    browser-verification block isn't something orca relies on);
+  - an attached-but-dead `McpHost` doesn't fail the turn; `ask_user` just
+    isn't there. `status: "pending"` is the normal init value, so only
+    `"failed"` can be detected. Surfacing it as a warning is optional and
+    shouldn't be fatal.
 - Rejected alternatives: project `.mcp.json` loaded the server as `disabled`
   (untrusted folder / import marker), and the agent fell back to curling the
   endpoint through its shell **[verified]**. `<project>/.grok/config.toml`
@@ -348,7 +462,7 @@ You are driven by the Orca orchestrator.
 | Full, Only(_) / Only() | Ignored (option B) |
 | NoTools, * | Hard |
 
-Resumed turns: same as fresh.
+Resumed turns: same as fresh **[verified grok 1.0.41, 2026-09-27, Linux]**: resume re-applies every flag (§5).
 
 ---
 
@@ -363,7 +477,10 @@ extracting claude's stream-json decoder into a shared one.
 private[grok] object GrokArgs:
   private val ReadTools   = Seq("read_file", "grep", "list_dir")
   private val WebTools    = Seq("web_search", "web_fetch")
-  private val AlwaysStrip = Seq("ask_user_question", "Agent")   // autonomous turns
+  // grok's own question tool answers "no user is available" at once (§5):
+  // strip it on every Full turn, autonomous and interactive. The allowlist tiers
+  // already exclude it.
+  private val FullStrip = Seq("ask_user_question", "Agent")
 
   final case class Wiring(args: Seq[String], cell: EnforcementCell)
 
@@ -375,8 +492,9 @@ private[grok] object GrokArgs:
       case ToolSet.NoTools     =>
         Wiring(allow(Seq("todo_write")) ++ strip(Seq("todo_write", "search_tool", "use_tool")), NoToolsCell)
       case ToolSet.Full => autoApprove match
-        case AutoApprove.All     => Wiring(Seq("--always-approve"), AllCell)
-        case AutoApprove.Only(_) => Wiring(Seq("--always-approve"), OnlyIgnoredCell)
+        // --always-approve is mandatory: headless `default` mode cancels the turn on the first edit.
+        case AutoApprove.All     => Wiring(Seq("--always-approve") ++ strip(FullStrip), AllCell)
+        case AutoApprove.Only(_) => Wiring(Seq("--always-approve") ++ strip(FullStrip), OnlyIgnoredCell)
 
   // `allow(Nil)` must be impossible: an empty --tools disables filtering.
   private def allow(names: Seq[String]): Seq[String] =
@@ -401,6 +519,9 @@ private[grok] object GrokArgs:
 // GrokBackend: structuredOutputMode = RawText; cheapModel(_) = Some(GrokModels.BuildFast)
 // sessions = SessionSupport.durable(IdScheme.ClientClaimed, id =>
 //   os.exists(grokHome / "sessions" / urlEncode(realPath(workDir)) / id / "chat_history.jsonl"))
+//   existence only: a pre-model failure leaves a non-empty history AND holds the id (§4);
+//   a held session with no `prompt_index` user line still needs the seed + preamble
+//   (rebuilt prompt over --resume) — open follow-up, §4 / §11 item 3
 // open: temp prompt file; rules = SystemPromptComposer.combine(config, askUserHint);
 //       Interactive → AskUserSession.allocate() + temp agent file with mcpServers;
 //       SubprocessSpawn.open("grok", events)(cli.spawnPiped(argv, cwd = workDir))
@@ -410,25 +531,57 @@ private[grok] object GrokArgs:
 Tests: `GrokArgsTest` (every tier; the non-empty `--tools` invariant; session
 flags), `GrokTurnTest` over recorded fixtures (the five transcripts from this
 study are a starting set: write turn, schema turn, MCP turn, dontAsk cancel,
-bad model), the shared decoder's own tests (claude's move with it), and
+bad model; plus the §11 follow-up ones: default-mode cancel, `ask_user_question`
+synthetic answer, read-only resume, failed MCP server), the shared decoder's own tests (claude's move with it), and
 `GrokIntegrationTest` (gated: fresh, resume, re-claim refusal, read-only write
-attempt with an init-tools assertion, structured turn).
+attempt with an init-tools assertion, structured turn; optionally the free
+pre-model-failure case: `-m nope-model` with a claimed id, then assert the
+probe reports the session present).
 
 ---
 
 ## 11. Open questions / to probe before shipping
 
-1. `--agent` profile side effects on the system prompt (§6).
-2. `server/discover` handling by orca's chimp-based `McpHost`.
-3. `chat_history.jsonl` left behind by a turn that failed before the model ran
-   (probe accuracy).
-4. `ask_user_question` behaviour in headless mode; headless `default`
-   permission mode on a non-read-only tool.
+1. ~~`--agent` profile side effects on the system prompt~~ **[verified grok
+   1.0.41, 2026-09-27, Linux]**: the body replaces only the stock
+   `<browser_verification>` block; `--rules` still appears; tools differ by
+   `send_feedback` / `wait_commands_or_subagents`; a dead MCP server doesn't
+   fail the turn. → Keep the system prompt in `--rules` and use a neutral
+   one-line agent body (§6).
+2. `server/discover` handling by orca's chimp-based `McpHost`. Still open:
+   probe it in the grok integration-test task against the real `McpHost`.
+3. `chat_history.jsonl` left behind by a turn that failed before the model
+   ran. Wire behaviour **[verified grok 1.0.41, 2026-09-27, Linux]**: yes,
+   non-empty (system message + synthetic reminder, no `prompt_index` user
+   line), the id is held ("already in use" on re-claim), and `--resume` of it
+   works. → The probe must stay "`chat_history.jsonl` exists" and must
+   **not** require a non-empty or real history (§4). **Still open on the orca
+   side:** resuming such a session as `EarlierAttempt` drops the session seed
+   and progress preamble (`continuedPrompt` vs `rebuiltPrompt`). The backend
+   must detect "held but no user turn" and get a rebuilt prompt over
+   `--resume` (§4 follow-up).
+4. ~~`ask_user_question` in headless mode; headless `default` mode on a
+   non-read-only tool~~ **[verified grok 1.0.41, 2026-09-27, Linux]**:
+   `ask_user_question` is listed by default and returns an immediate
+   synthetic "No user is available…" success; `--disallowed-tools
+   ask_user_question` removes it. With no permission flag the mode is
+   `default` and the first edit cancels the whole turn. → Always disallow
+   `ask_user_question` on `Full` turns (autonomous and interactive), and
+   always render `--always-approve` on `Full` (§5).
 5. Web-search turn: inline `server_tool_use` / `web_search_tool_result` blocks
-   through `ContentBlock.parse`.
-6. Resume under a stricter tier than creation.
-7. `--verbatim` (does grok rewrite prompts by default?) and `--no-auto-update`.
-8. xAI pricing rows for the pinned models.
+   through `ContentBlock.parse`. Still open.
+6. ~~Resume under a stricter tier than creation~~ **[verified grok 1.0.41,
+   2026-09-27, Linux]**: flags fully re-applied (init `tools` = the three
+   read tools, no bypass carried over, no file written). → `Resumed`
+   classified the same as `Fresh` (§5, §9).
+7. ~~`--verbatim` and `--no-auto-update`~~ **[verified grok 1.0.41,
+   2026-09-27, Linux]**: `--verbatim` exists, and without it the prompt is
+   only wrapped in `<user_query>` tags → don't pass it. `--no-auto-update`
+   is accepted but hidden from `--help`, and non-TTY stderr already
+   suppresses update checks → don't pass it; use
+   `GROK_DISABLE_AUTOUPDATER=1` if explicit suppression is wanted.
+   `--no-subagents` and `--cwd` both exist (§2).
+8. xAI pricing rows for the pinned models. Still open.
 
 ## Appendix: probe commands
 
@@ -441,4 +594,10 @@ grok -p "list tools" --tools todo_write --disallowed-tools todo_write,search_too
 grok -p "…" --json-schema '{"type":"object",…}' --output-format streaming-messages-json
 grok -p "…ask_user…" --agent /tmp/orca-agent.md --output-format streaming-messages-json   # mcpServers list frontmatter
 grok -p "…" --always-approve --deny 'Bash(touch *)' --output-format streaming-messages-json
+# §11 follow-up (Linux)
+grok -p "Reply OK." -m nope-model --session-id $U --output-format streaming-messages-json   # pre-model failure; then ls $GROK_HOME/sessions/<cwd>/$U
+grok -p "…" --resume $U --tools read_file,grep,list_dir --disallowed-tools search_tool,use_tool --no-subagents --output-format streaming-messages-json
+grok -p "…ask_user_question…" --always-approve --output-format streaming-messages-json   # add --disallowed-tools ask_user_question to remove it
+diff <plain session>/system_prompt.txt <--agent session>/system_prompt.txt
+grok --no-auto-update --version   # accepted though hidden from --help
 ```
