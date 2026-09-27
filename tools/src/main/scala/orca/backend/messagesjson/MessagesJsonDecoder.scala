@@ -154,20 +154,30 @@ private[orca] final class MessagesJsonDecoder[B <: BackendTag](
         AgentResult[B](
           WireSessionId(result.sessionId),
           resultBody(result).getOrElse(""),
-          withApiCalls(state, result.usage.getOrElse(Usage.empty)),
+          withApiCalls(state, observedUsage(result).getOrElse(Usage.empty)),
           turnModel(state, result).map(Model.apply)
         )
       )
     )
 
   /** The turn's model: the one the `result` message reports, falling back to
-    * what the harness announced in `system.init`.
+    * what the harness announced in `system.init`, each as the dialect reads it.
     */
   private def turnModel(
       state: State,
       result: InboundMessage.Result
   ): Option[String] =
-    result.model.orElse(state.initModel)
+    result.model
+      .flatMap(dialect.normaliseModel)
+      .orElse(state.initModel.flatMap(dialect.normaliseModel))
+
+  /** The result's usage, unless it has none or the dialect reads its all-zero
+    * shape as nothing observed.
+    */
+  private def observedUsage(result: InboundMessage.Result): Option[Usage] =
+    dialect.zeroUsage match
+      case ZeroUsage.MeasuredZero => result.usage
+      case ZeroUsage.Unobserved   => result.usage.filterNot(_.isZero)
 
   /** Attaches the turn's API-call count to its usage.
     *
@@ -198,19 +208,29 @@ private[orca] final class MessagesJsonDecoder[B <: BackendTag](
     * replays a queued pseudo-turn, an exhausted turn budget — and there the
     * reason lives only in `subtype`, so it stands in for the message rather
     * than leaving a bare "<backend> reported is_error". Settling it here is
-    * what lets the failed turn's `usage` reach the cost summary.
+    * what lets the failed turn's `usage` reach the cost summary. The harness's
+    * own `errors`, when it sends any, join the subtype there; with a body they
+    * are appended to the settle's message only.
     */
   private def resultError(state: State, result: InboundMessage.Result): Out =
-    val message = resultBody(result).getOrElse(
-      s"${dialect.backendName} reported is_error (subtype ${result.subtype})"
+    val errors =
+      Option.when(result.errors.nonEmpty)(result.errors.mkString("; "))
+    val body = resultBody(result)
+    val message = body.getOrElse(
+      s"${dialect.backendName} reported is_error (subtype ${result.subtype})" +
+        errors.fold("")(e => s": $e")
     )
+    val detail = body.flatMap(_ => errors) match
+      case Some(e) => s"$message (errors: $e)"
+      case None    => message
     val displayed =
       if state.deltasSinceLastFullMessage then "turn failed (see message above)"
       else message
     // A frame with no `usage` object saw no tokens — `Observed(Usage.empty)`
     // would reach the cost summary as a measured zero. The wire's sibling
     // `total_cost_usd` is folded into `Usage.cost`, so it is dropped with it.
-    val debit = result.usage match
+    // So is an all-zero one the dialect reads as unobserved.
+    val debit = observedUsage(result) match
       case Some(u) =>
         TurnDebit.Observed(
           withApiCalls(state, u),
@@ -222,7 +242,7 @@ private[orca] final class MessagesJsonDecoder[B <: BackendTag](
       List(TurnEvent.Error(displayed)),
       Settled.Failed(
         s"${dialect.backendName} turn failed (subtype ${result.subtype}, " +
-          s"session ${result.sessionId}): $message",
+          s"session ${result.sessionId}): $detail",
         debit
       )
     )

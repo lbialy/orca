@@ -24,3 +24,24 @@ private[orca] trait MessagesJsonDialect:
     * harness refusing a tool call for lack of permission.
     */
   def refusedTool(content: String): Option[String]
+
+  /** The model id a `model` field reporting `reported` means, or `None` when
+    * the value is the harness's placeholder for "not known" rather than an id.
+    * Applied to both `system.init` and the `result` message.
+    */
+  def normaliseModel(reported: String): Option[String]
+
+  /** How to read a `usage` object whose every token bucket and cost are zero.
+    */
+  def zeroUsage: ZeroUsage
+
+/** What a harness's all-zero `usage` object means. */
+private[orca] enum ZeroUsage:
+  /** The turn was measured and spent nothing. */
+  case MeasuredZero
+
+  /** The harness observed nothing: it fills the object with zeros on a turn
+    * that never reached the model (grok, rejecting an unknown model), so the
+    * turn debits nothing instead of reaching the cost summary as a priced zero.
+    */
+  case Unobserved

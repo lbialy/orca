@@ -33,6 +33,8 @@ private[orca] enum InboundMessage:
     * value lands in `structuredOutput` as raw JSON; without the flag (or in
     * error cases) the agent's free-form reply lands in `output`. Callers that
     * need a single value should prefer `structuredOutput.orElse(output)`.
+    * `errors` are the harness's own failure reasons (grok's `errors` array);
+    * `Nil` when the message carries none, as claude's never does.
     */
   case Result(
       subtype: String,
@@ -41,7 +43,8 @@ private[orca] enum InboundMessage:
       structuredOutput: Option[String],
       usage: Option[Usage],
       isError: Boolean,
-      model: Option[String]
+      model: Option[String],
+      errors: List[String]
   )
 
   /** A request for orca to answer on claude's stdin, e.g. a `can_use_tool`
@@ -106,7 +109,8 @@ private[orca] object InboundMessage:
           apiCalls = None
         ),
       isError = wire.is_error.getOrElse(false),
-      model = wire.model
+      model = wire.model,
+      errors = wire.errors
     )
 
   private def parseControlRequest(line: String): InboundMessage =
@@ -152,7 +156,8 @@ private[orca] object InboundMessage:
       usage: Option[UsageWire] = None,
       total_cost_usd: Option[BigDecimal] = None,
       is_error: Option[Boolean] = None,
-      model: Option[String] = None
+      model: Option[String] = None,
+      errors: List[String] = Nil
   ) derives ConfiguredJsonValueCodec
 
   private case class ControlRequestInner(subtype: String)

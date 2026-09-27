@@ -2,7 +2,11 @@ package orca.tools.claude
 
 import orca.agents.BackendTag
 import orca.backend.{AskUserChannel, DecodedTurnSpec, LiveTurn}
-import orca.backend.messagesjson.{MessagesJsonDialect, MessagesJsonTurn}
+import orca.backend.messagesjson.{
+  MessagesJsonDialect,
+  MessagesJsonTurn,
+  ZeroUsage
+}
 import orca.subprocess.PipedCliProcess
 
 import ox.Ox
@@ -19,6 +23,11 @@ private[claude] object ClaudeDialect extends MessagesJsonDialect:
 
   def refusedTool(content: String): Option[String] =
     PermissionRefusal.toolName(content)
+
+  def normaliseModel(reported: String): Option[String] = Some(reported)
+
+  // A claude turn that sent no request carries no `usage` object at all.
+  def zeroUsage: ZeroUsage = ZeroUsage.MeasuredZero
 
 private[claude] object ClaudeTurn:
 

@@ -122,3 +122,14 @@ class UsageTest extends munit.FunSuite:
     )
     assertEquals(u.freshInputTokens, 100L)
     assertEquals(u.inputTokens + u.outputTokens, 1_200L)
+
+  test("isZero holds only when every token axis and the cost are zero"):
+    assert(Usage.empty.isZero)
+    assert(
+      Usage.empty
+        .copy(cost = Some(BigDecimal("0.0")), apiCalls = Some(3L))
+        .isZero
+    )
+    assert(!Usage.empty.copy(cacheWriteInputTokens = 1L).isZero)
+    assert(!Usage.empty.copy(reasoningOutputTokens = 1L).isZero)
+    assert(!Usage.empty.copy(cost = Some(BigDecimal("0.01"))).isZero)
