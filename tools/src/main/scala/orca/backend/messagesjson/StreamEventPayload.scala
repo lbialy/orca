@@ -1,4 +1,4 @@
-package orca.tools.claude.streamjson
+package orca.backend.messagesjson
 
 import orca.util.RawJson
 
@@ -11,7 +11,7 @@ import com.github.plokhotnyuk.jsoniter_scala.macros.ConfiguredJsonValueCodec
   * collapse to `Unhandled(eventType)`; this is deliberately distinct from
   * `Unknown` in the other ADTs, which covers types we don't recognise at all.
   */
-private[claude] enum StreamEventPayload:
+private[orca] enum StreamEventPayload:
   case TextDelta(index: Int, text: String)
   case ThinkingDelta(index: Int, text: String)
   case InputJsonDelta(index: Int, partialJson: String)
@@ -19,7 +19,7 @@ private[claude] enum StreamEventPayload:
   case ContentBlockStop(index: Int)
   case Unhandled(eventType: String)
 
-private[claude] object StreamEventPayload:
+private[orca] object StreamEventPayload:
 
   /** `rawJson` is the serialized value of the outer message's `event` field. */
   def parse(rawJson: String): StreamEventPayload =

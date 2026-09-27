@@ -103,7 +103,7 @@ Decoding rules:
   a completed segment: emit `AssistantMessageEnd`, and re-emit its text as one
   delta only if no deltas streamed since the last segment. Without
   `--stream-partial-output`, every assistant line is a segment. Use
-  `ClaudeDecoder`'s `deltasSinceLastFullMessage` pattern.
+  `MessagesJsonDecoder`'s `deltasSinceLastFullMessage` pattern.
 - **Thinking**: `delta` with non-empty `text` → `AssistantThinkingDelta`;
   `completed` → nothing.
 - **Tool calls**: the payload is keyed `<kind>ToolCall`. Kinds seen: `read`,

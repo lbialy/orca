@@ -20,7 +20,7 @@ import ox.either.orThrow
   * JSON; where it arrives as a tool call (claude's `--json-schema` exit call,
   * `StructuredOutputMode.Tool`) it is the model's sign-off restating what the
   * `StructuredResult` states in full. Both `Tool`-mode decoders suppress the
-  * exit call itself (`ClaudeDecoder.assistantMessage`,
+  * exit call itself (`MessagesJsonDecoder.assistantMessage`,
   * `OpencodeDecoder.isStructuredOutputEcho`), so no message-opening event
   * follows the sign-off to release it. Mid-turn narration is unaffected — a
   * real tool call still releases the message that announced it. The interactive

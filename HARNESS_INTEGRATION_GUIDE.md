@@ -270,7 +270,7 @@ Emit `TurnEvent`s: `AssistantTextDelta`, `AssistantThinkingDelta`,
   `permissionDenied` results; grok's "Denied by permission policy" text).
 - If the CLI streams deltas **and** later repeats the full message, emit the
   deltas and use the full message only as the boundary (re-emit its text only
-  if no deltas preceded it) — see `ClaudeDecoder.assistantMessage`.
+  if no deltas preceded it) — see `MessagesJsonDecoder.assistantMessage`.
 - **Echo suppression**: the agent's own `ask_user` call and its result must not
   render (the bridge already surfaced the question). Track ids in
   `AskUserEchoes` (`suppress` on the call, `consume` on the result). Match the

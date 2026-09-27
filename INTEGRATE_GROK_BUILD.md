@@ -85,7 +85,7 @@ Also consider:
 
 ---
 
-## 3. Wire format — reuse `ClaudeDecoder`
+## 3. Wire format — reuse `MessagesJsonDecoder`
 
 Grok documents `streaming-messages-json` as "the Messages API stream-json
 wire format… a consumer that reconstructs messages, reads spend, or detects
@@ -125,7 +125,7 @@ than a copy of claude's):
    `--json-schema` **every** assistant text block is schema-constrained JSON:
    even the preamble "I'll read a.txt…" arrived as `{"content":"I'll read…","lines":1}`
    **[verified]**. The validated value is in `result.structured_output`,
-   which `ClaudeDecoder.resultBody` already prefers. Declare
+   which `MessagesJsonDecoder.resultBody` already prefers. Declare
    `StructuredOutputMode.RawText`: the reply text is the JSON, and
    `Prompts.autonomous` must still ship the schema. Note that the intermediate
    JSON blobs render as prose; consider suppressing assistant text on
@@ -147,7 +147,7 @@ than a copy of claude's):
    zero against spent tokens as "no report". An all-zero usage should become
    `TurnDebit.Unobserved` or an unobserved usage, not a measured zero.
 8. **Stream-event deltas**: tool input arrives as one `input_json_delta`, and
-   `citations_delta` never appears **[docs]**. Harmless: `ClaudeDecoder` takes
+   `citations_delta` never appears **[docs]**. Harmless: `MessagesJsonDecoder` takes
    tool calls from the full `assistant` frame.
 9. `result.usage.server_tool_use.web_search_requests` and inline
    `server_tool_use` / `web_search_tool_result` blocks: the decoder's
@@ -306,7 +306,7 @@ You are driven by the Orca orchestrator.
   page (not probed here).
 - Usage buckets are disjoint (`input_tokens` excludes cache) **[docs;
   consistent with observations]**, so map them straight onto `Usage`, as
-  `ClaudeDecoder` already does.
+  `InboundMessage` already does for claude.
 
 ---
 
