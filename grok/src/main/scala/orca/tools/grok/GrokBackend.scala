@@ -4,6 +4,7 @@ import orca.agents.{BackendTag, Model, StructuredOutputMode}
 import orca.backend.{
   AgentBackend,
   AskUserChannel,
+  HeldSession,
   IdScheme,
   LiveTurn,
   SessionSupport,
@@ -57,17 +58,18 @@ private[orca] class GrokBackend(
     * `--session-id`, later ones `--resume` it. Durable, since grok keeps the
     * transcript on disk under `grokHome`.
     *
-    * The probe only asks whether `chat_history.jsonl` exists. A turn that
-    * failed before the model ran (an unknown `-m`) still leaves a non-empty
-    * history and holds the id (grok 1.0.41, probed 2026-09-27): a stricter
-    * probe would report it gone, orca would re-claim it, and grok would refuse
-    * with "already in use" every time.
+    * Any `chat_history.jsonl` means grok holds the id. A turn that failed
+    * before the model ran (an unknown `-m`) still leaves a non-empty history
+    * and holds the id (grok 1.0.41, probed 2026-09-27), so reading it as gone
+    * would make orca re-claim it and grok refuse with "already in use" every
+    * time. Such a history has no user line carrying `prompt_index`, so it reads
+    * as [[HeldSession.Unprompted]]: resumed, but with the seed re-sent.
     */
   val sessions: SessionSupport[BackendTag.Grok.type] =
-    SessionSupport.durable(
+    SessionSupport.durableTracking(
       IdScheme.ClientClaimed,
       id =>
-        os.exists(
+        GrokBackend.heldSession(
           grokHome / "sessions" / GrokBackend.sessionDirName(workDir) / id /
             "chat_history.jsonl"
         )
@@ -157,6 +159,19 @@ private[grok] object GrokBackend:
       .replace("+", "%20")
       .replace("*", "%2A")
       .replace("%7E", "~")
+
+  /** What a session's `history` file says about it. A prompt the model saw is a
+    * user line with a top-level `prompt_index` key; an unescaped
+    * `"prompt_index":` can't occur inside a JSON string, so the substring test
+    * matches only that key.
+    */
+  def heldSession(history: os.Path): HeldSession =
+    if !os.exists(history) then HeldSession.Gone
+    else if os.read.lines
+        .stream(history)
+        .exists(_.contains("\"prompt_index\":"))
+    then HeldSession.Live
+    else HeldSession.Unprompted
 
   def agentDefinition(url: String): String =
     s"""---

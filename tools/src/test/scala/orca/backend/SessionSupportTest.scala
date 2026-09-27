@@ -70,6 +70,27 @@ class SessionSupportTest extends munit.FunSuite:
     assertEquals(s.dispatchFor(client), expected)
     assertEquals(probes, 1)
 
+  test(
+    "ClientClaimed: an unprompted held claim resumes, unstored until a turn lands"
+  ):
+    // A first turn that failed before the model ran holds the id with no
+    // prompt in it. Each ask re-probes, so the first turn that lands turns
+    // the answer into a plain continuation.
+    val s = SessionSupport.durableTracking[BackendTag.ClaudeCode.type](
+      IdScheme.ClientClaimed,
+      _ => HeldSession.Unprompted
+    )
+    val client = SessionId[BackendTag.ClaudeCode.type]("unprompted-id")
+    val unprompted = Dispatch.Resume(client.onWire, ResumeOrigin.Unprompted)
+    assertEquals(s.dispatchFor(client), unprompted)
+    assertEquals(s.dispatchFor(client), unprompted)
+    assertEquals(s.persistableWireId(client), None)
+    s.register(client, client.onWire)
+    assertEquals(
+      s.dispatchFor(client),
+      Dispatch.Resume(client.onWire, ResumeOrigin.ThisAttempt)
+    )
+
   test("ClientClaimed: an unsafe client id is never probed"):
     val s = SessionSupport.durable[BackendTag.ClaudeCode.type](
       IdScheme.ClientClaimed,

@@ -10,7 +10,12 @@ import orca.agents.{
   TurnDispatch,
   onWire
 }
-import orca.backend.{SupervisedBackend, SystemPromptComposer}
+import orca.backend.{
+  Dispatch,
+  ResumeOrigin,
+  SupervisedBackend,
+  SystemPromptComposer
+}
 import orca.backend.mcp.AskUserMcpServer
 import orca.subprocess.{FakePipedCliProcess, SpawnStubCliRunner}
 import orca.testkit.{OpenTurn, TempDirs}
@@ -210,17 +215,58 @@ class GrokBackendTest extends munit.FunSuite:
     assertEquals(GrokBackend.sessionDirName(link), expected)
     assert(expected.startsWith("%2F"), expected)
 
-  test("the probe finds a session's chat_history.jsonl, even an empty one"):
-    // A turn that failed before the model ran still holds the id; the probe
-    // must report it present so the next turn resumes instead of re-claiming.
-    val grokHome = TempDirs.dir()
-    val workDir = TempDirs.dir()
+  /** Writes `lines` as `sid`'s `chat_history.jsonl` for `workDir`. */
+  private def writeHistory(
+      grokHome: os.Path,
+      workDir: os.Path,
+      lines: String*
+  ): Unit =
     val dir = grokHome / "sessions" / GrokBackend.sessionDirName(workDir) /
       sid.value
     os.makeDir.all(dir)
-    os.write(dir / "chat_history.jsonl", "")
+    os.write(dir / "chat_history.jsonl", lines.map(_ + "\n").mkString)
+
+  test("the probe resumes a session whose history holds a prompt"):
+    val grokHome = TempDirs.dir()
+    val workDir = TempDirs.dir()
+    writeHistory(
+      grokHome,
+      workDir,
+      """{"type":"system","content":"You are Grok"}""",
+      """{"type":"user","content":[{"type":"text","text":"<user_query>\nhi\n</user_query>"}],"prompt_index":0}"""
+    )
     withBackend(new SpawnStubCliRunner(Nil), grokHome, workDir): backend =>
+      assertEquals(
+        backend.sessions.dispatchFor(sid),
+        Dispatch.Resume(sid.onWire, ResumeOrigin.EarlierAttempt)
+      )
+
+  test(
+    "a held history with no prompt resumes as Unprompted, recorded or not"
+  ):
+    // A turn that failed before the model ran (`-m nope-model`) leaves the
+    // system message and a skills reminder, and holds the id: resumed on the
+    // wire, but the prompt must be rebuilt. A prompt quoted inside a string
+    // is escaped, so it can't pass for the key.
+    val grokHome = TempDirs.dir()
+    val workDir = TempDirs.dir()
+    writeHistory(
+      grokHome,
+      workDir,
+      """{"type":"system","content":"see \"prompt_index\": 0"}""",
+      """{"type":"user","content":[{"type":"text","text":"<system-reminder>skills</system-reminder>"}]}"""
+    )
+    val unprompted = Dispatch.Resume(sid.onWire, ResumeOrigin.Unprompted)
+    withBackend(new SpawnStubCliRunner(Nil), grokHome, workDir): backend =>
+      assertEquals(backend.sessions.dispatchFor(sid), unprompted)
       backend.sessions.rehydrate(sid, sid.onWire)
+      assertEquals(backend.sessions.dispatchFor(sid), unprompted)
+
+  test("an empty chat_history.jsonl still holds the id"):
+    val grokHome = TempDirs.dir()
+    val workDir = TempDirs.dir()
+    writeHistory(grokHome, workDir)
+    withBackend(new SpawnStubCliRunner(Nil), grokHome, workDir): backend =>
       assertEquals(
         backend.sessions.dispatchFor(sid).asTurnDispatch,
         TurnDispatch.Resumed

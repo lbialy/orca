@@ -236,14 +236,16 @@ than a copy of claude's):
   user line**, so grok never saw the first prompt. Every retry on that
   session would therefore resume an empty conversation and silently lose the
   seed and preamble, without even `rebuiltPrompt`'s "re-seeding" warning.
-  **Follow-up (must be settled in the implementation task):** the grok
-  backend should detect a held session whose `chat_history.jsonl` has no
-  line with a `prompt_index` field, and treat it as needing a rebuilt prompt
-  while still dispatching `--resume <id>`. Options: a tri-state probe result
-  (gone / held-empty / held-with-history) in `SessionSupport`, or a
-  `ResumeOrigin` that makes `effectivePrompt` use `rebuiltPrompt`. Pin the
-  case in `GrokIntegrationTest` (`-m nope-model` with a claimed id, then a
-  real turn must see the seed) and in `SessionTest`.
+  **Settled:** the probe is tri-state (`HeldSession.Gone` / `Unprompted` /
+  `Live`, through `SessionSupport.durableTracking`). A `chat_history.jsonl`
+  with no `"prompt_index":` key reads as `Unprompted`, which dispatches
+  `Dispatch.Resume(id, ResumeOrigin.Unprompted)`: `--resume <id>` on the
+  wire, and `rebuiltPrompt` (seed + preamble, no lost-history warning) in
+  `effectivePrompt`. The answer isn't stored, so once a turn lands the next
+  continues normally. Pinned by `FlowSessionTest`, `SessionSupportTest`,
+  `GrokBackendTest` and `GrokIntegrationTest` (`-m nope-model` on a claimed
+  id reads as `Unprompted`, then a real `--resume` turn answers)
+  **[verified grok 1.0.41, 2026-09-27, Linux]**.
 - `--fork-session` (resume into a new id) and `--restore-code` are not needed.
 
 ---
@@ -537,11 +539,10 @@ private[grok] object GrokArgs:
     case Dispatch.Resume(id, _)   => Seq("--resume", WireSessionId.value(id))
 
 // GrokBackend: structuredOutputMode = RawText; cheapModel(_) = Some(GrokModels.BuildFast)
-// sessions = SessionSupport.durable(IdScheme.ClientClaimed, id =>
-//   os.exists(grokHome / "sessions" / urlEncode(realPath(workDir)) / id / "chat_history.jsonl"))
-//   existence only: a pre-model failure leaves a non-empty history AND holds the id (§4);
-//   a held session with no `prompt_index` user line still needs the seed + preamble
-//   (rebuilt prompt over --resume) — open follow-up, §4 / §11 item 1
+// sessions = SessionSupport.durableTracking(IdScheme.ClientClaimed, id =>
+//   heldSession(grokHome / "sessions" / urlEncode(realPath(workDir)) / id / "chat_history.jsonl"))
+//   no file → Gone; no `"prompt_index":` line → Unprompted (a pre-model failure holds the id,
+//   so --resume it with a rebuilt prompt, §4); otherwise Live
 // open: temp prompt file; rules = SystemPromptComposer.combine(config, askUserHint);
 //       Interactive → AskUserSession.allocate() + temp agent file with mcpServers;
 //       SubprocessSpawn.open("grok", events)(cli.spawnPiped(argv, cwd = workDir))
@@ -557,8 +558,9 @@ turn, dontAsk cancel, bad model, web search), the shared decoder's own tests
 ReadOnly write + `touch` attempt leaves the tree unchanged, ReadOnly argv's
 init `tools` carries no mutating tool, `--json-schema` turn parses, and an
 interactive `ask_user` round trip through the real `McpHost`. Re-claim
-refusal is left to `SessionSupport.heldClaim`'s unit coverage; the
-pre-model-failure case waits on §11 item 1.
+refusal is left to `SessionSupport.heldClaim`'s unit coverage. A
+`-m nope-model` turn on a claimed id then probes as `Unprompted`, and a real
+turn resumes it (§4).
 
 ---
 
@@ -572,11 +574,9 @@ in §3–§6 and §9 with their verified markers.
 1. **A held session with no user turn** (orca side). grok's behaviour is
    **[verified grok 1.0.41, 2026-09-27, Linux]**: a turn that fails before
    the model runs leaves a non-empty `chat_history.jsonl`, the id is held,
-   and `--resume` of it works, so the probe stays "`chat_history.jsonl`
-   exists" (§4). Still open: resuming such a session as `EarlierAttempt`
-   uses `continuedPrompt` and drops the session seed and progress preamble.
-   The backend must detect "held but no `prompt_index` line" and get a
-   rebuilt prompt over `--resume` (§4 follow-up).
+   and `--resume` of it works. **Settled** (§4): such a session probes as
+   `HeldSession.Unprompted` and resumes over `--resume` with a rebuilt
+   prompt.
 2. **TODO: xAI pricing rows** for the pinned models (`grok-4.7`,
    `grok-4.7-build-fast`, …). No rates are recorded; until they are, cost
    comes from grok's own `total_cost_usd`.
@@ -587,7 +587,13 @@ in §3–§6 and §9 with their verified markers.
 4. **Other MCP servers on interactive turns.** Interactive turns keep
    `search_tool` / `use_tool` for orca's `ask_user`, so an MCP server from the
    user's own grok config stays reachable on the allowlist tiers
-   **[unverified]** (noted in the enforcement cells).
+   **[unverified]** (noted in the enforcement cells). Narrowing it with
+   permission rules can't take the obvious shape: `deny` wins over `allow`
+   whatever the order (permissions guide, "Evaluation Order"), so
+   `--deny 'MCPTool(*)' --allow 'MCPTool(orca__ask_user)'` would block
+   `ask_user` too **[docs]**. The alternatives (`--permission-mode dontAsk`
+   with `--allow 'MCPTool(orca__*)'`, or a mode-aware enforcement cell) are
+   unprobed.
 
 ## Appendix: probe commands
 

@@ -9,16 +9,19 @@ import orca.agents.{
   Model,
   SessionId,
   ToolSet,
-  WireSessionId
+  WireSessionId,
+  onWire
 }
 import orca.backend.{
   ChannelEvent,
+  Dispatch,
+  ResumeOrigin,
   SupervisedBackend,
   SystemPromptComposer,
   TurnEvent,
   TurnMode
 }
-import orca.subprocess.OsProcCliRunner
+import orca.subprocess.{OsProcCliRunner, QuietProc}
 import orca.testkit.{GitRepo, OpenTurn, TempDirs}
 
 /** End-to-end tests against the real `grok` CLI. Gated on the
@@ -84,6 +87,44 @@ class GrokIntegrationTest extends munit.FunSuite:
       assert(
         second.output.contains("42"),
         s"expected the resumed turn to recall 42, got: ${second.output}"
+      )
+
+  test("a turn that failed before the model ran resumes as unprompted"):
+    // `-m nope-model` claims the id and writes a history with no prompt in
+    // it: the retry must `--resume` (a re-claim is refused) and read as
+    // unprompted, so the flow layer re-sends the seed. Once a real turn lands,
+    // the session continues normally, and a backend with nothing recorded
+    // probes grok's own transcript as live.
+    val repo = GitRepo.seeded()
+    withBackend(repo): backend =>
+      val session = fresh
+      val _ = intercept[orca.AgentTurnFailed]:
+        backend.runAutonomous(
+          prompt = "Reply with the single word: READY",
+          session = session,
+          config = unsandboxed.copy(model = Some(Model("nope-model")))
+        )
+      assertEquals(
+        backend.sessions.dispatchFor(session),
+        Dispatch.Resume(session.onWire, ResumeOrigin.Unprompted)
+      )
+      val result = backend.runAutonomous(
+        prompt = "Reply with the single word: READY",
+        session = session,
+        config = unsandboxed
+      )
+      assert(
+        result.output.toUpperCase.contains("READY"),
+        s"expected the resumed turn to answer, got: ${result.output}"
+      )
+      assertEquals(
+        backend.sessions.dispatchFor(session),
+        Dispatch.Resume(session.onWire, ResumeOrigin.ThisAttempt)
+      )
+      assertEquals(
+        new GrokBackend(OsProcCliRunner, workDir = repo).sessions
+          .dispatchFor(session),
+        Dispatch.Resume(session.onWire, ResumeOrigin.EarlierAttempt)
       )
 
   test("a read-only turn leaves the filesystem unchanged"):
@@ -172,8 +213,13 @@ class GrokIntegrationTest extends munit.FunSuite:
       outputSchema = None,
       agentFile = None
     )
-    val stdout =
-      os.proc(args).call(cwd = workDir, stdin = "").out.lines()
+    val run = QuietProc.call(args, cwd = workDir, stdin = "")
+    assertEquals(
+      run.exitCode,
+      0,
+      s"grok exited ${run.exitCode}; stderr: ${run.err.text()}"
+    )
+    val stdout = run.out.lines()
     val init = stdout
       .find(_.contains("\"subtype\":\"init\""))
       .getOrElse(fail(s"no init line in grok's output: $stdout"))

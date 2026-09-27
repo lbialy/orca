@@ -4,7 +4,7 @@ import orca.agents.{AutoApprove, ToolSet}
 import orca.backend.TurnMode
 
 /** grok invocation pieces for callers outside the grok module. */
-object GrokCli:
+private[orca] object GrokCli:
 
   /** The flags for a tool-less headless one-shot (the shell's slug suggestion):
     * an autonomous NoTools turn's, so the empty-`--tools` workaround keeps one

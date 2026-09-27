@@ -42,6 +42,25 @@ private[orca] enum ResumeOrigin:
     */
   case EarlierAttempt
 
+  /** The backend holds the client's claim, but no prompt ever reached its
+    * conversation: a turn that failed before the model ran (an unknown model,
+    * say) still claimed the id. The id can't be claimed again, so the turn
+    * resumes it on the wire, but its prompt is rebuilt as for a fresh
+    * conversation — a continued prompt would drop the seed the model never saw.
+    */
+  case Unprompted
+
+/** What a durable backend's probe finds under a wire id. */
+private[orca] enum HeldSession:
+  /** Nothing to resume. */
+  case Gone
+
+  /** Held, with no prompt in it yet — see [[ResumeOrigin.Unprompted]]. */
+  case Unprompted
+
+  /** Held, with a conversation to continue. */
+  case Live
+
 /** How a backend's wire-level session ids come to be — decides what a `Fresh`
   * dispatch may put on the wire and which id a commit records.
   */
@@ -74,7 +93,7 @@ private[orca] enum IdScheme:
   */
 private[orca] final class SessionSupport[B <: BackendTag] private (
     scheme: IdScheme,
-    probe: Option[String => Boolean]
+    probe: Option[String => HeldSession]
 ):
 
   /** client id → what is known about its wire id. Under
@@ -92,7 +111,9 @@ private[orca] final class SessionSupport[B <: BackendTag] private (
     * a turn whose prompt continues a conversation spawns against it too. A
     * `Fresh` answer is not stored — a failed first turn can leave a claim the
     * backend holds, which the next ask must see — so under
-    * [[IdScheme.ClientClaimed]] each ask re-runs the claim probe.
+    * [[IdScheme.ClientClaimed]] each ask re-runs the claim probe. Nor is a
+    * [[ResumeOrigin.Unprompted]] one: once a turn gets its prompt into the
+    * conversation, the next ask must continue it rather than re-seed it.
     *
     * For a durable backend the `probe` must NOT create, mutate, or resume the
     * session. An ephemeral backend keeps no durable transcript to probe, so its
@@ -104,21 +125,27 @@ private[orca] final class SessionSupport[B <: BackendTag] private (
       case Some(SessionSupport.Entry.Confirmed(wire, origin)) =>
         Dispatch.Resume(wire, origin)
       case Some(rehydrated @ SessionSupport.Entry.Rehydrated(wire)) =>
-        if probe.forall(holds(_, WireSessionId.value(wire))) then
-          val _ =
-            entries.replace(key, rehydrated, confirmedEarlierAttempt(wire))
-          Dispatch.Resume(wire, ResumeOrigin.EarlierAttempt)
-        else
-          // Dropped so this attempt's next commit (`putIfAbsent`) records the
-          // conversation the re-seeded turn opens, not the lost one.
-          val _ = entries.remove(key, rehydrated)
-          fresh(client)
+        probe.fold(HeldSession.Live)(held(_, WireSessionId.value(wire))) match
+          case HeldSession.Live =>
+            val _ =
+              entries.replace(key, rehydrated, confirmedEarlierAttempt(wire))
+            Dispatch.Resume(wire, ResumeOrigin.EarlierAttempt)
+          case HeldSession.Unprompted =>
+            Dispatch.Resume(wire, ResumeOrigin.Unprompted)
+          case HeldSession.Gone =>
+            // Dropped so this attempt's next commit (`putIfAbsent`) records the
+            // conversation the re-seeded turn opens, not the lost one.
+            val _ = entries.remove(key, rehydrated)
+            fresh(client)
       case None =>
         heldClaim(client) match
-          case Some(claim) =>
+          case HeldSession.Live =>
+            val claim = client.onWire
             val _ = entries.putIfAbsent(key, confirmedEarlierAttempt(claim))
             Dispatch.Resume(claim, ResumeOrigin.EarlierAttempt)
-          case None => fresh(client)
+          case HeldSession.Unprompted =>
+            Dispatch.Resume(client.onWire, ResumeOrigin.Unprompted)
+          case HeldSession.Gone => fresh(client)
 
   private def confirmedEarlierAttempt(
       wire: WireSessionId[B]
@@ -210,21 +237,21 @@ private[orca] final class SessionSupport[B <: BackendTag] private (
     * map's write doors: a client id read back from the session store reaches a
     * probe that builds a path, a regex or a URL from it.
     */
-  private def heldClaim(client: SessionId[B]): Option[WireSessionId[B]] =
+  private def heldClaim(client: SessionId[B]): HeldSession =
     val id = SessionId.value(client)
     scheme match
-      case IdScheme.ServerMinted => None
+      case IdScheme.ServerMinted => HeldSession.Gone
       case IdScheme.ClientClaimed =>
-        Option.when(SessionId.isSafe(id) && probe.exists(holds(_, id)))(
-          client.onWire
-        )
+        probe
+          .filter(_ => SessionId.isSafe(id))
+          .fold(HeldSession.Gone)(held(_, id))
 
   /** Runs `p` against `wireId`, reading a non-fatal failure as "gone": a probe
     * must not fail a turn, and opening a fresh conversation is always safe.
     */
-  private def holds(p: String => Boolean, wireId: String): Boolean =
+  private def held(p: String => HeldSession, wireId: String): HeldSession =
     try p(wireId)
-    catch case NonFatal(_) => false
+    catch case NonFatal(_) => HeldSession.Gone
 
   /** The wire id to persist into the progress log for resuming `client`, or
     * `None` when nothing durable is known — always `None` for an ephemeral
@@ -271,6 +298,18 @@ private[orca] object SessionSupport:
   def durable[B <: BackendTag](
       scheme: IdScheme,
       probe: String => Boolean
+  ): SessionSupport[B] =
+    durableTracking(
+      scheme,
+      id => if probe(id) then HeldSession.Live else HeldSession.Gone
+    )
+
+  /** [[durable]] for a backend whose probe can also tell a held session that
+    * never received a prompt ([[HeldSession.Unprompted]]) from one to continue.
+    */
+  def durableTracking[B <: BackendTag](
+      scheme: IdScheme,
+      probe: String => HeldSession
   ): SessionSupport[B] =
     new SessionSupport(scheme, Some(probe))
 

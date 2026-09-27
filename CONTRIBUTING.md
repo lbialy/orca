@@ -36,6 +36,7 @@ Some tests shell out to real external tools and skip by default:
 ```bash
 ORCA_INTEGRATION=1 sbt test
 ORCA_INTEGRATION=1 sbt "claude/testOnly orca.tools.claude.ClaudeIntegrationTest"
+ORCA_INTEGRATION=1 sbt "grok/testOnly orca.tools.grok.GrokIntegrationTest"
 ORCA_INTEGRATION=1 sbt "tools/testOnly orca.tools.OsGitHubIntegrationTest"
 ORCA_INTEGRATION=1 sbt publishLocal "shell/testOnly *BuiltInFlowsCompileTest"
 ORCA_INTEGRATION=1 sbt publishLocal "runner/testOnly *ScalaCliSmokeTest"
@@ -43,15 +44,10 @@ ORCA_INTEGRATION=1 sbt publishLocal "runner/testOnly *ScalaCliSmokeTest"
 
 | Suite | Needs |
 |---|---|
-| `{Claude,Codex,Gemini,Opencode,Pi}IntegrationTest` (one per `orca.tools.<backend>`) | that backend's CLI authenticated |
+| `{Claude,Codex,Gemini,Grok,Opencode,Pi}IntegrationTest` (one per `orca.tools.<backend>`) | that backend's CLI authenticated; `GrokIntegrationTest` bills its calls, so it defaults to `grok-4.7-build-fast` (override with `ORCA_GROK_MODEL`) |
 | `OsGitHubIntegrationTest` | `gh` authenticated |
 | `BuiltInFlowsCompileTest`, `FlowAuthoringSmokeTest` | `scala-cli`, and a `publishLocal` in the same sbt invocation |
 | `ScalaCliSmokeTest` | the above, plus `claude` authenticated — it starts a real flow |
-
-grok has no live suite yet: `GrokIntegrationTest` (`INTEGRATE_GROK_BUILD.md`
-§10) is not written. Until it is, grok's decoder is covered by `GrokTurnTest`,
-which replays the recorded grok 1.0.41 streams in
-`docs/research/harness-integration/fixtures/grok-*.jsonl`.
 
 The three scala-cli suites link a script against the local Ivy cache, so they
 need `publishLocal` in the *same* sbt invocation: the scripts pin that run's

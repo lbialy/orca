@@ -36,8 +36,10 @@ Where grok differs from claude on the wire (`INTEGRATE_GROK_BUILD.md` §3):
 
 Behaviour of the flags (§5, §6):
 
-- Headless grok defaults to `bypassPermissions`, so every tier needs explicit
-  flags.
+- Headless grok's default permission mode depends on the machine
+  (`bypassPermissions` on one probe, `default` on another, where the first
+  edit cancels the whole turn), so every tier renders explicit flags and
+  `Full` always passes `--always-approve`.
 - An empty `--tools ""`, or a `--tools` naming only unknown tools, turns
   filtering *off*.
 - Under `--permission-mode dontAsk`, an out-of-set edit cancels the whole
@@ -110,11 +112,16 @@ approvals matter.
 - SIGINT kills grok at once, so an interactive cancel surfaces as
   `OrcaInteractiveCancelled` with no result line.
 - Open (see `INTEGRATE_GROK_BUILD.md` §11):
-  - A held session with no user turn (left by a pre-model failure) resumes
-    as `EarlierAttempt`, so the retry doesn't receive the session seed or
-    the progress preamble.
   - There are no xAI pricing rows.
   - `Full, Only(set)` stays `Ignored` until an ACP driver brings approvals.
+  - Interactive allowlist turns keep grok's MCP meta-tools for `ask_user`,
+    so an MCP server from the user's own grok config stays reachable.
+- A held session with no prompt in it (left by a turn that failed before the
+  model ran) is probed as `HeldSession.Unprompted`: it resumes with
+  `--resume`, since grok refuses to re-claim the id, but as
+  `ResumeOrigin.Unprompted`, which rebuilds the prompt from the session seed
+  and the progress preamble. Pinned by `FlowSessionTest` and the gated
+  `GrokIntegrationTest`.
 - Settled by the gated `GrokIntegrationTest` (grok 1.0.41, 2026-09-27): the
   chimp `McpHost` survives grok's `server/discover`, so `ask_user`
   round-trips, and web-search content blocks decode (pinned by
