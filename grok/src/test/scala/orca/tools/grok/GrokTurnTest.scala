@@ -143,6 +143,15 @@ class GrokTurnTest extends munit.FunSuite:
       )
     )
 
+  liveTest("a web-search turn skips the inline server-side search blocks"):
+    // grok runs web_search server-side: the call and its results arrive as
+    // `server_tool_use` / `web_search_tool_result` blocks inside one
+    // `assistant` frame, with no local tool_result to pair them with.
+    val (events, result) = succeed(GrokTurn(replay("grok-websearch.jsonl")))
+    assertEquals(result.output, "Example Domain")
+    assertEquals(toolCalls(events), Nil)
+    assertEquals(result.usage.cost, Some(BigDecimal("0.05147384")))
+
   liveTest("an unknown model fails with grok's errors text and no debit"):
     val (_, failed) = failure(GrokTurn(replay("grok-badmodel.jsonl")))
     assert(

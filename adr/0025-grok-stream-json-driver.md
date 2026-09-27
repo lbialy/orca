@@ -113,8 +113,9 @@ approvals matter.
   - A held session with no user turn (left by a pre-model failure) resumes
     as `EarlierAttempt`, so the retry doesn't receive the session seed or
     the progress preamble.
-  - How the chimp `McpHost` handles `server/discover` from grok is unprobed.
-  - Web-search content blocks are unprobed.
   - There are no xAI pricing rows.
-  - There is no gated `GrokIntegrationTest` yet; the decoder is pinned by the
-    fixture replays in `docs/research/harness-integration/fixtures/grok-*.jsonl`.
+  - `Full, Only(set)` stays `Ignored` until an ACP driver brings approvals.
+- Settled by the gated `GrokIntegrationTest` (grok 1.0.41, 2026-09-27): the
+  chimp `McpHost` survives grok's `server/discover`, so `ask_user`
+  round-trips, and web-search content blocks decode (pinned by
+  `grok-websearch.jsonl`).

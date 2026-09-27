@@ -24,7 +24,7 @@ import orca.agents.{
 private[grok] object GrokArgs:
   import GrokTools.*
 
-  private val ReadTools: Seq[String] = Seq(ReadFile, Grep, ListDir)
+  private[grok] val ReadTools: Seq[String] = Seq(ReadFile, Grep, ListDir)
   private val WebTools: Seq[String] = Seq(WebSearch, WebFetch)
   private val MetaTools: Seq[String] = Seq(SearchTool, UseTool)
 
