@@ -143,6 +143,14 @@ lazy val gemini = (project in file("gemini"))
     libraryDependencies ++= Seq(osLib, jsoniter, jsoniterMacros)
   )
 
+lazy val grok = (project in file("grok"))
+  .dependsOn(tools, tools % "test->test")
+  .settings(commonSettings)
+  .settings(
+    name := "orca-grok",
+    libraryDependencies ++= Seq(osLib, jsoniter, jsoniterMacros)
+  )
+
 lazy val flow = (project in file("flow"))
   .dependsOn(tools, tools % "test->test")
   .settings(commonSettings)
@@ -313,4 +321,15 @@ lazy val orcaRoot = (project in file("."))
     // invoke each of them (they'd noisily warn about missing `doc`/`docs`).
     updateDocs / aggregate := false
   )
-  .aggregate(tools, flow, claude, codex, opencode, pi, gemini, runner, shell)
+  .aggregate(
+    tools,
+    flow,
+    claude,
+    codex,
+    opencode,
+    pi,
+    gemini,
+    grok,
+    runner,
+    shell
+  )
