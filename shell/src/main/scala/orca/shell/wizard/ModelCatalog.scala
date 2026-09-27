@@ -61,7 +61,10 @@ private[shell] object ModelCatalog:
       case BackendTag.Opencode =>
         " (provider/model, e.g. anthropic/claude-sonnet-5)"
       case BackendTag.Pi => " (name or pattern, `:thinking` suffix allowed)"
-      case _             => ""
+      // raw model ids, not self-resolving aliases, so a curated list would
+      // drift with every xAI release (ADR 0021 §4)
+      case BackendTag.Grok => " (e.g. grok-4.7, grok-4.7-build-fast)"
+      case _               => ""
 
   /** The clear-pin affordance appended to a free-text model prompt, only when
     * there's a `current` pin to clear: with a pin prefilled as the input's

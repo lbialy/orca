@@ -237,6 +237,20 @@ class WizardTest extends munit.FunSuite:
       assert(Wizard(ui, _ == "gemini", path).run(reconfigure = false))
       assertEquals(ui.recordedFirstRows, List.fill(3)(BackendTag.Gemini))
 
+  test("a grok role's free-text model prompt shows the grok model hint"):
+    withTempPath: path =>
+      val ui = ScriptedUi(
+        selectScript = List.fill(3)(UiOutcome.Selected(BackendTag.Grok)),
+        inputScript = List.fill(3)(UiOutcome.Selected(""))
+      )
+      assert(Wizard(ui, probe, path).run(reconfigure = false))
+
+      val hint = ModelCatalog.freeTextHint(BackendTag.Grok)
+      assert(
+        ui.recordedInputs.forall(_._1.contains(hint)),
+        ui.recordedInputs.toString
+      )
+
   test("detection decorates harness labels but never disables a choice"):
     withTempPath: path =>
       val ui = ScriptedUi(selectScript =
@@ -609,6 +623,7 @@ class WizardTest extends munit.FunSuite:
     assertEquals(ModelCatalog.curated(BackendTag.Opencode), Nil)
     assertEquals(ModelCatalog.curated(BackendTag.Pi), Nil)
     assertEquals(ModelCatalog.curated(BackendTag.Gemini), Nil)
+    assertEquals(ModelCatalog.curated(BackendTag.Grok), Nil)
     assertEquals(
       ModelCatalog.curated(BackendTag.Codex).map(_._1),
       List("gpt-6-sol", "gpt-6-astra", "gpt-6-luna")
@@ -657,12 +672,15 @@ class WizardTest extends munit.FunSuite:
     )
 
   test(
-    "freeTextHint hints at the opencode and pi model formats, nothing elsewhere"
+    "freeTextHint hints at the opencode, pi and grok model formats, nothing elsewhere"
   ):
     assert(
       ModelCatalog.freeTextHint(BackendTag.Opencode).contains("provider/model")
     )
     assert(ModelCatalog.freeTextHint(BackendTag.Pi).contains(":thinking"))
+    assert(
+      ModelCatalog.freeTextHint(BackendTag.Grok).contains("grok-4.7-build-fast")
+    )
     assertEquals(ModelCatalog.freeTextHint(BackendTag.Gemini), "")
 
   test(

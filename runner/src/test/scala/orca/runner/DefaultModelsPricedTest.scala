@@ -46,3 +46,9 @@ class DefaultModelsPricedTest extends munit.FunSuite:
 
   test("the default gemini agent pins a model the default price table knows"):
     assertDefaultModelPriced("gemini", GeminiAgents.default(wiring))
+
+  // No grok case: grok reports `total_cost_usd` on its result line, so its
+  // turns are priced from the wire and don't depend on the price table.
+  // TODO(grok pricing): add Pricing rows for grok-4.7 / grok-4.7-build-fast
+  // once xAI rates are confirmed from the price page — grok reports
+  // total_cost_usd, so turns are priced from the wire meanwhile
