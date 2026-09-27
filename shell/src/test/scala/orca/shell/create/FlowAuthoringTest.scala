@@ -4,6 +4,7 @@ import orca.agents.BackendTag
 import orca.settings.AgentSpec
 import orca.shell.{OrcaBuild, ShellEnv, TestShellEnv, Tier}
 import orca.testkit.TempDirs
+import orca.tools.grok.GrokCli
 
 class FlowAuthoringTest extends munit.FunSuite:
 
@@ -179,6 +180,21 @@ class FlowAuthoringTest extends munit.FunSuite:
       FlowAuthoring.slugArgv(unpinned(BackendTag.Gemini), "suggest a name"),
       Seq("gemini", "-p", "suggest a name")
     )
+
+  test("slugArgv: grok runs build-fast with every tool removed"):
+    assertEquals(
+      FlowAuthoring.slugArgv(unpinned(BackendTag.Grok), "suggest a name"),
+      Seq("grok", "-m", "grok-4.7-build-fast") ++ GrokCli.noTools ++
+        Seq("-p", "suggest a name")
+    )
+
+  test("slugArgv: grok's model pin replaces build-fast"):
+    val argv = FlowAuthoring.slugArgv(
+      AgentSpec(BackendTag.Grok, Some("grok-4.6")),
+      "suggest a name"
+    )
+    assertEquals(argv.take(3), Seq("grok", "-m", "grok-4.6"))
+    assertEquals(argv.takeRight(2), Seq("-p", "suggest a name"))
 
   test("slugArgv: claude ignores the model pin for the cheap haiku model"):
     assertEquals(

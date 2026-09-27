@@ -322,41 +322,46 @@ private def effectivePrompt(chat: Chat[?], text: String)(using
     fc: FlowControl
 ): String =
   val turn = fc.claimTurn(chat.id.value)
+  def record = fc.sessionStore.records().find(_.id == chat.id.value)
   chat.agent.dispatchFor(chat.id) match
     case Dispatch.Fresh(_) =>
-      rebuiltPrompt(fc.sessionStore.records().find(_.id == chat.id.value), text)
-    case Dispatch.Resume(_, origin) => continuedPrompt(origin, turn, text)
+      warnIfConversationLost(record)
+      rebuiltPrompt(record, text)
+    case Dispatch.Resume(_, origin) =>
+      resumedPrompt(origin, turn, record, text)
 
 /** The prompt for a turn the backend will answer from a conversation it still
   * holds. Only a conversation that predates this attempt is told its
   * uncommitted work is gone, and only on this attempt's first turn against it —
   * from the second, the uncommitted edits in the tree are this attempt's own
-  * (ADR 0018 §2.6, carried-over live conversations).
+  * (ADR 0018 §2.6, carried-over live conversations). A held conversation that
+  * never saw a prompt still needs the seed and preamble; nothing was lost, so
+  * it gets no warning.
   */
-private def continuedPrompt(
+private def resumedPrompt(
     origin: ResumeOrigin,
     turn: SessionTurn,
+    record: => Option[SessionRecord],
     text: String
-): String =
+)(using FlowContext, FlowControl): String =
   (turn, origin) match
+    case (_, ResumeOrigin.Unprompted) => rebuiltPrompt(record, text)
     case (SessionTurn.First, ResumeOrigin.EarlierAttempt) =>
       composePrimedPrompt(Some(InterruptedAttemptNotice), None, text)
-    case (SessionTurn.First, ResumeOrigin.ThisAttempt) |
-        (SessionTurn.Later, _) =>
+    case (SessionTurn.First, ResumeOrigin.ThisAttempt) | (
+          SessionTurn.Later,
+          ResumeOrigin.EarlierAttempt | ResumeOrigin.ThisAttempt
+        ) =>
       text
 
-/** The prompt for a turn against a conversation the backend does not hold — a
-  * first use, or one lost since the attempt that opened it — rebuilt from the
-  * recorded seed and the progress preamble.
+/** A recorded wire id proves a conversation once existed, so a fresh dispatch
+  * means it was lost (pruned store, another machine) and the rebuild drops its
+  * prior turns; silently degraded context is hard to debug. No wire id is a
+  * plain first use.
   */
-private def rebuiltPrompt(record: Option[SessionRecord], text: String)(using
-    ctx: FlowContext,
-    fc: FlowControl
-): String =
-  // A recorded wire id proves a conversation once existed, so a failed probe
-  // means it was lost (pruned store, another machine) and the rebuild drops
-  // its prior turns; silently degraded context is hard to debug. No wire id is
-  // a plain first use.
+private def warnIfConversationLost(record: Option[SessionRecord])(using
+    ctx: FlowContext
+): Unit =
   if record.exists(_.resumeWireId.isDefined) then
     ctx.emit(
       OrcaEvent.Step(
@@ -365,6 +370,16 @@ private def rebuiltPrompt(record: Option[SessionRecord], text: String)(using
           "is lost)"
       )
     )
+
+/** The prompt for a turn against a conversation holding none of the session's
+  * context — a first use, one lost since the attempt that opened it, or one the
+  * backend holds without ever having seen a prompt — rebuilt from the recorded
+  * seed and the progress preamble.
+  */
+private def rebuiltPrompt(record: Option[SessionRecord], text: String)(using
+    ctx: FlowContext,
+    fc: FlowControl
+): String =
   val seed = record.map(_.seed).filter(_.nonEmpty)
   val preamble =
     progressPreamble(fc.progressStore.load(), ctx.git.headCommit())

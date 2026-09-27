@@ -1,4 +1,4 @@
-package orca.tools.claude.streamjson
+package orca.backend.messagesjson
 
 import orca.events.{Usage}
 import orca.util.RawJson
@@ -12,7 +12,7 @@ import com.github.plokhotnyuk.jsoniter_scala.macros.ConfiguredJsonValueCodec
   * Unknown top-level types collapse to [[Unknown]] so protocol drift doesn't
   * crash the pipeline.
   */
-private[claude] enum InboundMessage:
+private[orca] enum InboundMessage:
   /** First message of a session — claude announces the resolved session id and
     * (typically) the model id here. The `model` is a defensive fallback for the
     * [[Result]] message's own `model` field; when both are present they agree.
@@ -33,6 +33,8 @@ private[claude] enum InboundMessage:
     * value lands in `structuredOutput` as raw JSON; without the flag (or in
     * error cases) the agent's free-form reply lands in `output`. Callers that
     * need a single value should prefer `structuredOutput.orElse(output)`.
+    * `errors` are the harness's own failure reasons (grok's `errors` array);
+    * `Nil` when the message carries none, as claude's never does.
     */
   case Result(
       subtype: String,
@@ -41,7 +43,8 @@ private[claude] enum InboundMessage:
       structuredOutput: Option[String],
       usage: Option[Usage],
       isError: Boolean,
-      model: Option[String]
+      model: Option[String],
+      errors: List[String]
   )
 
   /** A request for orca to answer on claude's stdin, e.g. a `can_use_tool`
@@ -52,7 +55,7 @@ private[claude] enum InboundMessage:
   case StreamEvent(payload: StreamEventPayload)
   case Unknown(rawType: String)
 
-private[claude] object InboundMessage:
+private[orca] object InboundMessage:
 
   /** Parse one NDJSON line. Malformed JSON propagates `JsonReaderException` —
     * callers decide whether to skip or fail.
@@ -88,7 +91,7 @@ private[claude] object InboundMessage:
     // one: measured against claude 2.1.220 it is (tool calls + 1), so a
     // response issuing three tool calls at once reports three turns where one
     // request was made. The count comes from the distinct `assistant` message
-    // ids instead — see `ClaudeDecoder.State.responseIds`.
+    // ids instead — see `MessagesJsonDecoder.State.responseIds`.
     Result(
       subtype = wire.subtype,
       sessionId = wire.session_id,
@@ -106,7 +109,8 @@ private[claude] object InboundMessage:
           apiCalls = None
         ),
       isError = wire.is_error.getOrElse(false),
-      model = wire.model
+      model = wire.model,
+      errors = wire.errors
     )
 
   private def parseControlRequest(line: String): InboundMessage =
@@ -152,7 +156,8 @@ private[claude] object InboundMessage:
       usage: Option[UsageWire] = None,
       total_cost_usd: Option[BigDecimal] = None,
       is_error: Option[Boolean] = None,
-      model: Option[String] = None
+      model: Option[String] = None,
+      errors: List[String] = Nil
   ) derives ConfiguredJsonValueCodec
 
   private case class ControlRequestInner(subtype: String)

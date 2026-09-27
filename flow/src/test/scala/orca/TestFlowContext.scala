@@ -7,6 +7,7 @@ import orca.agents.{
   ClaudeAgent,
   CodexAgent,
   GeminiAgent,
+  GrokAgent,
   OpencodeAgent,
   PiAgent
 }
@@ -41,6 +42,7 @@ class TestFlowContext(
   lazy val opencode: OpencodeAgent = stub("opencode")
   lazy val pi: PiAgent = stub("pi")
   lazy val gemini: GeminiAgent = stub("gemini")
+  lazy val grok: GrokAgent = stub("grok")
   private[orca] lazy val runtimeGit: RuntimeGit =
     wiredGit.getOrElse(stub("git"))
   lazy val gh: GitHubTool = wiredGh.getOrElse(stub("gh"))

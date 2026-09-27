@@ -1,4 +1,4 @@
-package orca.tools.claude.streamjson
+package orca.backend.messagesjson
 
 import orca.events.Usage
 import orca.testkit.Usages.usage
@@ -136,3 +136,28 @@ class InboundMessageTest extends munit.FunSuite:
       """{"type":"system","subtype":"keepalive"}"""
     )
     assertEquals(msg, InboundMessage.Unknown("system.keepalive"))
+
+  test("result without an errors field decodes errors as Nil"):
+    val msg = InboundMessage.parse(
+      """{"type":"result","subtype":"error_max_turns","session_id":"sid-1","is_error":true}"""
+    )
+    assertEquals(msg.asInstanceOf[InboundMessage.Result].errors, Nil)
+
+  test("result carries the harness's errors array"):
+    val msg = InboundMessage.parse(
+      """{"type":"result","subtype":"error_during_execution","session_id":"sid-1","is_error":true,"errors":["Couldn't set model 'nope-model': unknown","cancelled"]}"""
+    )
+    assertEquals(
+      msg.asInstanceOf[InboundMessage.Result].errors,
+      List("Couldn't set model 'nope-model': unknown", "cancelled")
+    )
+
+  // grok's usage nests a `server_tool_use` object the parser has no field for.
+  test("result usage tolerates an unknown nested server_tool_use object"):
+    val msg = InboundMessage.parse(
+      """{"type":"result","subtype":"success","session_id":"sid-1","usage":{"input_tokens":10,"output_tokens":20,"server_tool_use":{"web_search_requests":2}},"total_cost_usd":0.003}"""
+    )
+    assertEquals(
+      msg.asInstanceOf[InboundMessage.Result].usage,
+      Some(usage(10L, 20L, Some(BigDecimal("0.003"))))
+    )

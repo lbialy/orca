@@ -53,6 +53,7 @@ private[shell] object ResumeCommand:
             Right(Seq(binary, "--resume", wireId))
           case BackendTag.Codex    => Right(Seq(binary, "resume", wireId))
           case BackendTag.Opencode => Right(Seq(binary, "--session", wireId))
+          case BackendTag.Grok     => Right(Seq(binary, "--resume", wireId))
           case BackendTag.Gemini =>
             geminiIndex(wireId) match
               case Some(index) =>

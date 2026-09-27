@@ -4,7 +4,9 @@ import munit.FunSuite
 import orca.backend.{
   AgentResult,
   Dispatch,
+  HeldSession,
   IdScheme,
+  ResumeOrigin,
   SessionSupport,
   TurnRequest
 }
@@ -15,7 +17,8 @@ import orca.agents.{
   JsonData,
   SessionId,
   SessionKey,
-  WireSessionId
+  WireSessionId,
+  onWire
 }
 import orca.events.OrcaEvent
 import orca.progress.{BranchMode, ProgressHeader, ProgressStore, StageEntry}
@@ -120,6 +123,12 @@ class FlowSessionTest extends FunSuite:
       */
     case HeldClaim
 
+    /** Durable and client-claimed, with nothing recorded: the backend holds the
+      * client's id, but no prompt ever reached it. What a first turn that
+      * failed before the model ran leaves behind (grok, `-m nope-model`).
+      */
+    case UnpromptedClaim
+
   /** Controllable Agent stub for seeded-run tests.
     *
     * @param existsResult
@@ -180,6 +189,11 @@ class FlowSessionTest extends FunSuite:
           SessionSupport.durable[BackendTag.ClaudeCode.type](
             IdScheme.ClientClaimed,
             _ => true
+          )
+        case StubDurability.UnpromptedClaim =>
+          SessionSupport.durableTracking[BackendTag.ClaudeCode.type](
+            IdScheme.ClientClaimed,
+            _ => HeldSession.Unprompted
           )
         case StubDurability.Committed =>
           stubSupport(existsResult, durableSession)
@@ -406,6 +420,60 @@ class FlowSessionTest extends FunSuite:
       "a later turn must forward the prompt verbatim"
     )
 
+  test(
+    "a held conversation that never saw a prompt: resumed on the wire, re-seeded in the prompt"
+  ):
+    // A first turn that failed before the model ran still claimed the id, so
+    // the retry must `--resume` it — but the model never saw the seed, so the
+    // prompt is rebuilt, without the interrupted-attempt notice or a lost-
+    // history warning. Once that turn lands, the next continues it.
+    val seed = "You are a planning agent."
+    val steps = scala.collection.mutable.ListBuffer.empty[String]
+    val listener = new orca.events.OrcaListener:
+      def onEvent(event: orca.events.OrcaEvent): Unit = event match
+        case orca.events.OrcaEvent.Step(msg) => steps += msg
+        case _                               => ()
+    val run = makeRun(
+      sessions = List(
+        SessionRecord(
+          name = "s",
+          stage = StagePath.FlowBody,
+          id = testSessionId,
+          seed = seed,
+          resumeWireId = Some(testSessionId),
+          backend = BackendTag.ClaudeCode
+        )
+      ),
+      completedStages = List("triage"),
+      listeners = List(listener)
+    )
+    import run.given
+    val agent = new StubAgentForSeeded(
+      existsResult = false,
+      durability = StubDurability.UnpromptedClaim
+    )
+    val session = flowSession(agent)
+    val _ = session.run("continue the task")
+    val prompt = agent.capturedPrompt.getOrElse(fail("no prompt captured"))
+    assertEquals(
+      agent.capturedDispatch,
+      Some(Dispatch.Resume(testSession.onWire, ResumeOrigin.Unprompted))
+    )
+    assert(prompt.contains(seed), s"the seed must be re-sent; got: $prompt")
+    assert(
+      prompt.contains("Progress so far"),
+      s"the preamble must be re-sent; got: $prompt"
+    )
+    assert(
+      !prompt.contains(NoticeInstruction),
+      s"nothing ran, so there's nothing to be told; got: $prompt"
+    )
+    assert(
+      !steps.exists(_.contains("re-seeding")),
+      s"no history was lost, so no warning; got: $steps"
+    )
+    val _ = session.run("second")
+    assertEquals(agent.capturedPrompts(1), "second")
   test(
     "carried-over conversation the backend lost: re-seeded, and not also told"
   ):

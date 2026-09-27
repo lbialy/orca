@@ -3,6 +3,7 @@ package orca.shell.create
 import orca.agents.BackendTag
 import orca.settings.{AgentSpec, SettingsFile, SettingsScope}
 import orca.shell.{OrcaBuild, ShellEnv, Tier}
+import orca.tools.grok.{GrokCli, GrokModels}
 import orca.util.PromptResource
 
 import scala.util.control.NonFatal
@@ -70,12 +71,13 @@ private[shell] object FlowAuthoring:
   /** Non-interactive, one-shot-and-exit invocation of `agent` for the cheap
     * slug-suggestion call ([[suggestFilename]]), verified against each
     * installed CLI's `--help`: claude's `-p`/`--print`, codex's `exec`
-    * subcommand, gemini's `-p`/`--prompt`, opencode's `run` subcommand, and
-    * pi's `-p`/`--print`. Claude always gets `--model haiku`, whatever its pin
-    * — a slug needs the cheapest tier, and the user's default (often opus)
-    * would double the latency. The other CLIs get the configured pin, if any,
-    * since their cheap-model names are provider- or install-specific; a slow
-    * pinned model only costs the local fallback.
+    * subcommand, gemini's `-p`/`--prompt`, opencode's `run` subcommand, pi's
+    * `-p`/`--print` and grok's `-p`. Claude always gets `--model haiku`,
+    * whatever its pin — a slug needs the cheapest tier, and the user's default
+    * (often opus) would double the latency. Grok gets `grok-4.7-build-fast`
+    * unless pinned. The other CLIs get the configured pin, if any, since their
+    * cheap-model names are provider- or install-specific; a slow pinned model
+    * only costs the local fallback.
     */
   def slugArgv(agent: AgentSpec, prompt: String): Seq[String] =
     val binary = AgentSpec.harnessNameFor(agent.backend)
@@ -88,6 +90,10 @@ private[shell] object FlowAuthoring:
       // gemini's `-p` takes the prompt as its value.
       case BackendTag.Gemini   => Seq(binary) ++ pin ++ Seq("-p", prompt)
       case BackendTag.Opencode => Seq(binary, "run") ++ pin :+ prompt
+      // grok's own cheap tier unless pinned, and no tools at all.
+      case BackendTag.Grok =>
+        Seq(binary, "-m", agent.model.getOrElse(GrokModels.BuildFast.name)) ++
+          GrokCli.noTools ++ Seq("-p", prompt)
 
   /** The cheap slug-suggestion prompt: asks for nothing but a bare filename, so
     * [[sanitizeSlug]] has the best chance of a clean answer to sanitize.

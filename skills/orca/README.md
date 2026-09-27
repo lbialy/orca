@@ -20,3 +20,7 @@ implementation tasks to Orca. Install it into your harness:
   `<project>/.agents/skills/orca` (project) — no manifest needed. Codex
   has no package/marketplace install mechanism; directory placement is the
   whole story.
+- **Grok**: copy/symlink to `~/.grok/skills/orca` (personal) or
+  `<project>/.grok/skills/orca` (project) — no manifest needed. Grok also
+  scans `~/.claude/skills/` and `.claude/skills/`, so the Claude Code
+  symlink above is picked up too (grok 1.0.41's bundled README, "Skills").

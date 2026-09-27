@@ -1,4 +1,4 @@
-package orca.tools.claude.streamjson
+package orca.backend.messagesjson
 
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
 import com.github.plokhotnyuk.jsoniter_scala.macros.{
@@ -15,14 +15,14 @@ import scala.util.control.NonFatal
   * actually routes on. Unknown block types collapse to `Unknown(rawType)` so
   * protocol drift doesn't crash the parser.
   */
-private[claude] enum ContentBlock:
+private[orca] enum ContentBlock:
   case Text(text: String)
   case Thinking(text: String)
   case ToolUse(id: String, name: String, rawInput: String)
   case ToolResult(toolUseId: String, content: String, isError: Boolean)
   case Unknown(rawType: String)
 
-private[claude] object ContentBlock:
+private[orca] object ContentBlock:
 
   def parse(rawJson: String): ContentBlock =
     val envelope = readFromString[BlockEnvelope](rawJson)
@@ -110,7 +110,7 @@ private[claude] object ContentBlock:
       val snippet =
         if raw.length > 200 then s"${raw.take(200)}…" else raw
       System.err.println(
-        s"[orca-debug claude.$where] swallowed ${t.getClass.getName}: " +
+        s"[orca-debug messagesjson.$where] swallowed ${t.getClass.getName}: " +
           s"${Option(t.getMessage).getOrElse("")} | raw=$snippet"
       )
 

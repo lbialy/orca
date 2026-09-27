@@ -7,6 +7,7 @@ import orca.agents.{
   ClaudeAgent,
   CodexAgent,
   GeminiAgent,
+  GrokAgent,
   Model,
   OpencodeAgent,
   PiAgent
@@ -317,6 +318,7 @@ class RoleAgentsTest extends munit.FunSuite:
       codex: CodexAgent = stub(BackendTag.Codex),
       opencode: OpencodeAgent = stub(BackendTag.Opencode),
       pi: PiAgent = stub(BackendTag.Pi),
-      gemini: GeminiAgent = stub(BackendTag.Gemini)
+      gemini: GeminiAgent = stub(BackendTag.Gemini),
+      grok: GrokAgent = stub(BackendTag.Grok)
   ): WiredAgents =
-    new WiredAgents(claude, codex, opencode, pi, gemini)
+    new WiredAgents(claude, codex, opencode, pi, gemini, grok)

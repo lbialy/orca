@@ -10,16 +10,16 @@ import orca.review.ReviewerCatalog
 import scala.annotation.implicitNotFound
 
 /** Ambient context a flow script operates in. Bundles every tool the top- level
-  * accessors (`claude`, `codex`, `opencode`, `pi`, `gemini`, `git`, `gh`, `fs`)
-  * resolve against and the user's positional prompt (`userPrompt`).
+  * accessors (`claude`, `codex`, `opencode`, `pi`, `gemini`, `grok`, `git`,
+  * `gh`, `fs`) resolve against and the user's positional prompt (`userPrompt`).
   *
   * One is built per `flow(...)` invocation — flow scripts don't normally
   * instantiate `FlowContext` directly, just call the accessors inside a
   * `flow(args): ...` block, which provides one.
   *
-  * The five per-backend accessors (`claude`, `codex`, …) come from
-  * [[AgentSet]]. The three role accessors ([[planningAgent]] / [[codingAgent]]
-  * / [[reviewAgent]], ADR 0020) are resolved from settings against that set
+  * The six per-backend accessors (`claude`, `codex`, …) come from [[AgentSet]].
+  * The three role accessors ([[planningAgent]] / [[codingAgent]] /
+  * [[reviewAgent]], ADR 0020) are resolved from settings against that set
   * before the context exists, each landing on its own backend.
   */
 @implicitNotFound(

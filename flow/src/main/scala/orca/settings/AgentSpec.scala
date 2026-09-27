@@ -19,6 +19,7 @@ private[orca] object AgentSpec:
     case BackendTag.Opencode   => "opencode"
     case BackendTag.Pi         => "pi"
     case BackendTag.Gemini     => "gemini"
+    case BackendTag.Grok       => "grok"
 
   /** Settings-file harness names — the reverse of [[harnessNameFor]]. */
   val harnessNames: Map[String, BackendTag] =

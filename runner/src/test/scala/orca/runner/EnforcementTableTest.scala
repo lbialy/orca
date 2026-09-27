@@ -7,6 +7,7 @@ import orca.subprocess.StubCliRunner
 import orca.tools.claude.ClaudeBackend
 import orca.tools.codex.CodexBackend
 import orca.tools.gemini.GeminiBackend
+import orca.tools.grok.GrokBackend
 import orca.tools.opencode.OpencodeBackend
 import orca.tools.pi.PiBackend
 
@@ -42,12 +43,13 @@ class EnforcementTableTest extends munit.FunSuite:
   import Enforcement.*
 
   /** One expected row, by backend. Named arguments at the call sites, and a
-    * signature a sixth backend has to widen, keep the columns from drifting.
+    * signature a seventh backend has to widen, keep the columns from drifting.
     */
   private def row(
       claude: Enforcement,
       codex: Enforcement,
       gemini: Enforcement,
+      grok: Enforcement,
       opencode: Enforcement,
       pi: Enforcement
   ): Map[BackendTag, Enforcement] =
@@ -55,6 +57,7 @@ class EnforcementTableTest extends munit.FunSuite:
       BackendTag.ClaudeCode -> claude,
       BackendTag.Codex -> codex,
       BackendTag.Gemini -> gemini,
+      BackendTag.Grok -> grok,
       BackendTag.Opencode -> opencode,
       BackendTag.Pi -> pi
     )
@@ -63,6 +66,7 @@ class EnforcementTableTest extends munit.FunSuite:
     claude = Hard,
     codex = Hard,
     gemini = PromptOnly,
+    grok = Hard,
     opencode = Hard,
     pi = Hard
   )
@@ -71,6 +75,7 @@ class EnforcementTableTest extends munit.FunSuite:
     claude = Hard,
     codex = PromptOnly,
     gemini = PromptOnly,
+    grok = Hard,
     opencode = Hard,
     pi = PromptOnly
   )
@@ -79,6 +84,7 @@ class EnforcementTableTest extends munit.FunSuite:
     claude = Hard,
     codex = PromptOnly,
     gemini = PromptOnly,
+    grok = Hard,
     opencode = Hard,
     pi = Hard
   )
@@ -87,6 +93,7 @@ class EnforcementTableTest extends munit.FunSuite:
     claude = Hard,
     codex = Hard,
     gemini = Hard,
+    grok = Hard,
     opencode = Ignored,
     pi = Ignored
   )
@@ -95,6 +102,7 @@ class EnforcementTableTest extends munit.FunSuite:
     claude = Hard,
     codex = SandboxApprox,
     gemini = Ignored,
+    grok = Ignored,
     opencode = Ignored,
     pi = Ignored
   )
@@ -103,6 +111,7 @@ class EnforcementTableTest extends munit.FunSuite:
     claude = Hard,
     codex = Ignored,
     gemini = Ignored,
+    grok = Ignored,
     opencode = Ignored,
     pi = Ignored
   )
@@ -185,6 +194,7 @@ class EnforcementTableTest extends munit.FunSuite:
         new ClaudeBackend(cli),
         new CodexBackend(cli),
         new GeminiBackend(cli),
+        new GrokBackend(cli),
         OpencodeBackend(cli, TempDirs.dir(), OrcaListener.noop),
         PiBackend.forInspection(cli)
       )

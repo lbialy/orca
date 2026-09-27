@@ -1,40 +1,29 @@
-package orca.tools.claude
+package orca.backend.messagesjson
 
 import orca.agents.{BackendTag, Model, WireSessionId}
 import orca.events.{TurnDebit, Usage}
 import orca.backend.{
   AgentResult,
-  AskUserChannel,
   AskUserEchoes,
-  LiveTurn,
-  TurnEvent,
-  DecodedTurnSpec,
   LineDecoder,
   Settled,
   Step,
-  DecodedTurn,
-  StreamSource
-}
-import orca.subprocess.PipedCliProcess
-import orca.tools.claude.streamjson.{
-  ContentBlock,
-  InboundMessage,
-  StreamEventPayload
+  TurnEvent
 }
 
-import ox.Ox
-
-/** Decodes one claude stream-json turn: NDJSON → [[InboundMessage]] →
-  * `TurnEvent`s.
+/** Decodes one messages-JSON turn: NDJSON → [[InboundMessage]] → `TurnEvent`s.
+  * `dialect` supplies what differs between the harnesses that speak it.
   */
-private[claude] final class ClaudeDecoder(outputSchema: Option[String])
-    extends LineDecoder[BackendTag.ClaudeCode.type, ClaudeDecoder.State]:
+private[orca] final class MessagesJsonDecoder[B <: BackendTag](
+    dialect: MessagesJsonDialect,
+    outputSchema: Option[String]
+) extends LineDecoder[B, MessagesJsonDecoder.State]:
 
-  import ClaudeDecoder.State
+  import MessagesJsonDecoder.State
 
-  private type Out = Step[BackendTag.ClaudeCode.type, State]
+  private type Out = Step[B, State]
 
-  def backendName: String = "claude"
+  def backendName: String = dialect.backendName
 
   def terminalMessageNoun: String = "a result message"
 
@@ -91,17 +80,17 @@ private[claude] final class ClaudeDecoder(outputSchema: Option[String])
             // bridge emits a UserQuestion for the same exchange. Remember the
             // id so `userMessage` also drops the matching tool_result (else the
             // typed answer re-renders).
-            case ContentBlock.ToolUse(id, name, _)
-                if name == ClaudeBackend.AskUserToolName =>
+            case ContentBlock.ToolUse(id, name, rawInput)
+                if dialect.isAskUserCall(name, rawInput) =>
               (echoes.suppress(id), events)
             // The CLI-injected structured-output "exit" call (`--json-schema`):
             // the payload reaches the caller via the result message, so
             // rendering the tool call would show the same JSON twice. Gated on
-            // structured mode so a genuine user tool named `StructuredOutput`
-            // is unaffected in plain runs.
+            // structured mode so a genuine user tool of the same name is
+            // unaffected in plain runs.
             case ContentBlock.ToolUse(id, name, _)
                 if outputSchema.isDefined &&
-                  name == ClaudeBackend.StructuredOutputToolName =>
+                  dialect.structuredOutputToolName.contains(name) =>
               (echoes.suppress(id), events)
             case ContentBlock.ToolUse(_, name, rawInput) =>
               (
@@ -141,12 +130,12 @@ private[claude] final class ClaudeDecoder(outputSchema: Option[String])
       body: String,
       isError: Boolean
   ): TurnEvent =
-    PermissionRefusal.toolName(body) match
+    dialect.refusedTool(body) match
       case Some(tool) if isError => TurnEvent.ToolDenied(tool)
       case _ =>
         TurnEvent.ToolResult(
-          // claude's tool_result block carries only a tool_use_id, not the
-          // name — the grammar legalizes None here (see TurnEvent).
+          // A tool_result block carries only a tool_use_id, not the name —
+          // the grammar legalizes None here (see TurnEvent).
           toolName = None,
           ok = !isError,
           content = body
@@ -162,23 +151,33 @@ private[claude] final class ClaudeDecoder(outputSchema: Option[String])
       state,
       Nil,
       Settled.Succeeded(
-        AgentResult[BackendTag.ClaudeCode.type](
+        AgentResult[B](
           WireSessionId(result.sessionId),
           resultBody(result).getOrElse(""),
-          withApiCalls(state, result.usage.getOrElse(Usage.empty)),
+          withApiCalls(state, observedUsage(result).getOrElse(Usage.empty)),
           turnModel(state, result).map(Model.apply)
         )
       )
     )
 
   /** The turn's model: the one the `result` message reports, falling back to
-    * what claude announced in `system.init`.
+    * what the harness announced in `system.init`, each as the dialect reads it.
     */
   private def turnModel(
       state: State,
       result: InboundMessage.Result
   ): Option[String] =
-    result.model.orElse(state.initModel)
+    result.model
+      .flatMap(dialect.normaliseModel)
+      .orElse(state.initModel.flatMap(dialect.normaliseModel))
+
+  /** The result's usage, unless it has none or the dialect reads its all-zero
+    * shape as nothing observed.
+    */
+  private def observedUsage(result: InboundMessage.Result): Option[Usage] =
+    dialect.zeroUsage match
+      case ZeroUsage.MeasuredZero => result.usage
+      case ZeroUsage.Unobserved   => result.usage.filterNot(_.isZero)
 
   /** Attaches the turn's API-call count to its usage.
     *
@@ -208,20 +207,30 @@ private[claude] final class ClaudeDecoder(outputSchema: Option[String])
     * An empty body is the case that most needs diagnosing — a resume that
     * replays a queued pseudo-turn, an exhausted turn budget — and there the
     * reason lives only in `subtype`, so it stands in for the message rather
-    * than leaving a bare "claude reported is_error". Settling it here is what
-    * lets the failed turn's `usage` reach the cost summary.
+    * than leaving a bare "<backend> reported is_error". Settling it here is
+    * what lets the failed turn's `usage` reach the cost summary. The harness's
+    * own `errors`, when it sends any, join the subtype there; with a body they
+    * are appended to the settle's message only.
     */
   private def resultError(state: State, result: InboundMessage.Result): Out =
-    val message = resultBody(result).getOrElse(
-      s"claude reported is_error (subtype ${result.subtype})"
+    val errors =
+      Option.when(result.errors.nonEmpty)(result.errors.mkString("; "))
+    val body = resultBody(result)
+    val message = body.getOrElse(
+      s"${dialect.backendName} reported is_error (subtype ${result.subtype})" +
+        errors.fold("")(e => s": $e")
     )
+    val detail = body.flatMap(_ => errors) match
+      case Some(e) => s"$message (errors: $e)"
+      case None    => message
     val displayed =
       if state.deltasSinceLastFullMessage then "turn failed (see message above)"
       else message
     // A frame with no `usage` object saw no tokens — `Observed(Usage.empty)`
     // would reach the cost summary as a measured zero. The wire's sibling
     // `total_cost_usd` is folded into `Usage.cost`, so it is dropped with it.
-    val debit = result.usage match
+    // So is an all-zero one the dialect reads as unobserved.
+    val debit = observedUsage(result) match
       case Some(u) =>
         TurnDebit.Observed(
           withApiCalls(state, u),
@@ -232,19 +241,20 @@ private[claude] final class ClaudeDecoder(outputSchema: Option[String])
       state,
       List(TurnEvent.Error(displayed)),
       Settled.Failed(
-        s"claude turn failed (subtype ${result.subtype}, " +
-          s"session ${result.sessionId}): $message",
+        s"${dialect.backendName} turn failed (subtype ${result.subtype}, " +
+          s"session ${result.sessionId}): $detail",
         debit
       )
     )
 
-  /** claude only sends a control request when asked to prompt over stdio, which
-    * orca never does, and stdin is closed so no answer could reach it.
+  /** The harness only sends a control request when asked to prompt over stdio,
+    * which orca never does, and stdin is closed so no answer could reach it.
     */
   private def unexpectedControlRequest(subtype: String): TurnEvent =
+    val name = dialect.backendName
     TurnEvent.Error(
-      s"claude sent an unexpected control_request ($subtype) that orca cannot " +
-        "answer: its stdin is closed. A claude CLI change or a flag enabling " +
+      s"$name sent an unexpected control_request ($subtype) that orca cannot " +
+        s"answer: its stdin is closed. A $name CLI change or a flag enabling " +
         "stdio permission prompts may have caused it."
     )
 
@@ -264,7 +274,7 @@ private[claude] final class ClaudeDecoder(outputSchema: Option[String])
     case _ =>
       None // tool-use blocks, block start/stop, unhandled — decoder ignores
 
-private[claude] object ClaudeDecoder:
+private[orca] object MessagesJsonDecoder:
 
   /** @param initModel
     *   the model `system.init` announced, for a `result` message that doesn't
@@ -292,7 +302,7 @@ private[claude] object ClaudeDecoder:
     *   that.
     * @param echoes
     *   tool-use ids suppressed in `assistantMessage` — `ask_user` invocations
-    *   and (in structured mode) the CLI-injected `StructuredOutput` exit call —
+    *   and (in structured mode) the CLI-injected structured-output exit call —
     *   whose `tool_result` `userMessage` drops
     */
   final case class State(
@@ -301,22 +311,3 @@ private[claude] object ClaudeDecoder:
       responseIds: Set[String],
       echoes: AskUserEchoes
   )
-
-private[claude] object ClaudeTurn:
-
-  /** Starts decoding `process` into the caller's turn scope. */
-  def apply(
-      process: PipedCliProcess,
-      openingPrompt: Option[String] = None,
-      outputSchema: Option[String] = None,
-      askUser: AskUserChannel = AskUserChannel.Unavailable
-  )(using Ox): LiveTurn[BackendTag.ClaudeCode.type] =
-    DecodedTurn.start(
-      StreamSource.fromProcess(process),
-      DecodedTurnSpec(
-        openingPrompt = openingPrompt,
-        outputSchema = outputSchema,
-        askUser = askUser
-      ),
-      ClaudeDecoder(outputSchema)
-    )

@@ -1,4 +1,4 @@
-package orca.tools.claude.streamjson
+package orca.backend.messagesjson
 
 class ContentBlockTest extends munit.FunSuite:
 

@@ -36,6 +36,7 @@ Some tests shell out to real external tools and skip by default:
 ```bash
 ORCA_INTEGRATION=1 sbt test
 ORCA_INTEGRATION=1 sbt "claude/testOnly orca.tools.claude.ClaudeIntegrationTest"
+ORCA_INTEGRATION=1 sbt "grok/testOnly orca.tools.grok.GrokIntegrationTest"
 ORCA_INTEGRATION=1 sbt "tools/testOnly orca.tools.OsGitHubIntegrationTest"
 ORCA_INTEGRATION=1 sbt publishLocal "shell/testOnly *BuiltInFlowsCompileTest"
 ORCA_INTEGRATION=1 sbt publishLocal "runner/testOnly *ScalaCliSmokeTest"
@@ -43,7 +44,7 @@ ORCA_INTEGRATION=1 sbt publishLocal "runner/testOnly *ScalaCliSmokeTest"
 
 | Suite | Needs |
 |---|---|
-| `{Claude,Codex,Gemini,Opencode,Pi}IntegrationTest` (one per `orca.tools.<backend>`) | that backend's CLI authenticated |
+| `{Claude,Codex,Gemini,Grok,Opencode,Pi}IntegrationTest` (one per `orca.tools.<backend>`) | that backend's CLI authenticated; `GrokIntegrationTest` bills its calls, so it defaults to `grok-4.7-build-fast` (override with `ORCA_GROK_MODEL`) |
 | `OsGitHubIntegrationTest` | `gh` authenticated |
 | `BuiltInFlowsCompileTest`, `FlowAuthoringSmokeTest` | `scala-cli`, and a `publishLocal` in the same sbt invocation |
 | `ScalaCliSmokeTest` | the above, plus `claude` authenticated — it starts a real flow |
@@ -67,8 +68,8 @@ sbt publishLocal
 ```
 
 Installs `org.virtuslab::orca:0.0.17` plus its transitive modules
-(`orca-tools`, `orca-flow`, and the five backends
-`orca-{claude,codex,gemini,opencode,pi}`) into `~/.ivy2/local` so a flow
+(`orca-tools`, `orca-flow`, and the six backends
+`orca-{claude,codex,gemini,grok,opencode,pi}`) into `~/.ivy2/local` so a flow
 script with `//> using repository ivy2Local` can resolve them. For an
 iteration loop, `sbt "~publishLocal"` rebuilds and republishes on every
 save.

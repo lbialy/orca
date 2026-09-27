@@ -100,6 +100,7 @@ object FlowCanary:
         val _ = claude.opus.withNetworkTools(Seq("WebFetch"))
         val _ = codex.mini
         val _ = gemini.flash
+        val _ = grok.fast
         val _ = opencode.openaiLuna.withModel("ollama", "llama3.1")
 
   /** Review-and-fix loop; pulls in `allReviewers` and the internal `display`/
