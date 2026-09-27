@@ -482,6 +482,9 @@ Words for talking to a coding agent, from the outside in:
   The message grammar is on `TurnEvent`'s scaladoc.
 - **decoder** — a backend's wire protocol as a `LineDecoder`: a fold over the
   lines of its stream. `DecodedTurn` runs it and owns the rest of the turn.
+  claude and grok speak the same messages-JSON stream, so they share one
+  decoder, `MessagesJsonDecoder` in `tools/.../backend/messagesjson/`, and
+  differ only in a `MessagesJsonDialect` (ADR 0025).
 - **settle** — a decoder's `Step.Settle`: the turn's outcome (`Settled`) is
   known and later lines are ignored. Only the decoder settles;
   `SessionSupport` *confirms* a rehydrated wire id.
@@ -495,7 +498,8 @@ Words for talking to a coding agent, from the outside in:
   attempts. **wire id** (`WireSessionId`) — the id the backend knows the
   conversation by; `SessionId#onWire` is the only crossing.
 - **`IdScheme`** — how wire ids come to be: `ClientClaimed` (the client id is
-  the wire id) or `ServerMinted` (the backend mints it on the first turn).
+  the wire id; claude/grok/pi) or `ServerMinted` (the backend mints it on the
+  first turn; codex/gemini/opencode).
 - **conversation key** (`OrcaEvent.conversationKey`) — the wire id, or the
   client id before one is known; the one key turns and sessions join on in
   events and the cost log.

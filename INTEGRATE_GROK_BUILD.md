@@ -15,6 +15,11 @@ no-tools tiers come from `--tools`. MCP (`ask_user`) can be injected per
 invocation through a temp agent-definition file, without touching the user's
 tree.
 
+**Status: implemented** in the `grok` module (`orca-grok`) on the shared
+`tools/.../backend/messagesjson/` decoder. The decisions are recorded in
+[ADR 0025](adr/0025-grok-stream-json-driver.md). Still open: §11 items 2, 3
+(orca side), 5 and 8, and §10.
+
 ## Environment probed
 
 | | |

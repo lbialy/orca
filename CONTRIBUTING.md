@@ -48,6 +48,11 @@ ORCA_INTEGRATION=1 sbt publishLocal "runner/testOnly *ScalaCliSmokeTest"
 | `BuiltInFlowsCompileTest`, `FlowAuthoringSmokeTest` | `scala-cli`, and a `publishLocal` in the same sbt invocation |
 | `ScalaCliSmokeTest` | the above, plus `claude` authenticated — it starts a real flow |
 
+grok has no live suite yet: `GrokIntegrationTest` (`INTEGRATE_GROK_BUILD.md`
+§10) is not written. Until it is, grok's decoder is covered by `GrokTurnTest`,
+which replays the recorded grok 1.0.41 streams in
+`docs/research/harness-integration/fixtures/grok-*.jsonl`.
+
 The three scala-cli suites link a script against the local Ivy cache, so they
 need `publishLocal` in the *same* sbt invocation: the scripts pin that run's
 dynver version (runner's suite reads it from `-Dorca.build.version`, shell's
@@ -67,8 +72,8 @@ sbt publishLocal
 ```
 
 Installs `org.virtuslab::orca:0.0.17` plus its transitive modules
-(`orca-tools`, `orca-flow`, and the five backends
-`orca-{claude,codex,gemini,opencode,pi}`) into `~/.ivy2/local` so a flow
+(`orca-tools`, `orca-flow`, and the six backends
+`orca-{claude,codex,gemini,grok,opencode,pi}`) into `~/.ivy2/local` so a flow
 script with `//> using repository ivy2Local` can resolve them. For an
 iteration loop, `sbt "~publishLocal"` rebuilds and republishes on every
 save.

@@ -24,7 +24,8 @@ for any reason, it can be continued from the last commit.
 You can use Orca to orchestrate development in any language and ecosystem.
 
 Orca assumes that it has configured, logged-in access to Claude, Codex,
-OpenCode, or Pi (depending which backend you use), as well as `gh` and `git`.
+OpenCode, Pi, Gemini or Grok (depending which backend you use), as well as `gh`
+and `git`.
 
 Install with one command, which installs `scala-cli` (via its official
 installer) if you don't have it already, and writes the `orca` executable to
@@ -214,7 +215,7 @@ The words this README uses. Orca's internals have their own, in
 **Agents and conversations**
 
 - **harness** (also **backend**) — the coding-agent CLI orca drives: `claude`,
-  `codex`, `opencode`, `pi` or `gemini`.
+  `codex`, `opencode`, `pi`, `gemini` or `grok`.
 - **agent** — a harness with a model and tool settings (`claude`, `codex.mini`,
   `codingAgent`, …); see [Built-in tools](#built-in-tools).
 - **role agent** — `planningAgent`, `codingAgent` or `reviewAgent`, resolved
@@ -272,7 +273,7 @@ The words this README uses. Orca's internals have their own, in
 
 The following are available inside a `flow(...) { ... }`.
 
-The five coding agents — `claude`, `codex`, `opencode`, `pi`, `gemini` — share
+The six coding agents — `claude`, `codex`, `opencode`, `pi`, `gemini`, `grok` — share
 one call surface. Durable: `session(name, seed): FlowSession` →
 `.run(prompt)` / `.resultAs[O].run(input)`. One-shot: `run(prompt)`,
 `resultAs[O].{autonomous,interactive}.run(input)`. Ephemeral multi-turn:
@@ -288,6 +289,7 @@ backend's model accessors and backend-specific extras:
 | `opencode` | `anthropicOpus`/`anthropicSonnet`/`anthropicHaiku`, `openaiAstra`/`openaiSol`/`openaiLuna`, `cheap` (provider-matched: openai→luna, else anthropicHaiku), `withModel(providerModel)` / `withModel(provider, modelId)` | [OpenCode](https://opencode.ai) coding/reviewing agent, driven over HTTP+SSE against a headless `opencode serve` (started lazily, shared for the attempt; sessions survive it — see [Sessions](#sessions)). Spans providers, so models are provider-qualified: use an accessor (`opencode.openaiLuna`) or `opencode.withModel("openai/gpt-5-mini")` / `opencode.withModel("ollama", "llama3.1")`. Inherits the user's configured `opencode` providers/auth. |
 | `pi` | `withModel(Model)` | [Pi](https://pi.dev/) coding agent backend, driven through `pi --mode rpc`. Pi handles provider/model selection through its own CLI configuration; pin a model with `pi.withModel(Model("provider/model"))`. Interactive calls can ask clarifying questions via Orca's `ask_user` bridge. |
 | `gemini` | `flash`, `cheap` (→ flash), `withModel(Model)` | Google Gemini CLI coding/reviewing agent, driven via `gemini --output-format stream-json`. Bare `gemini` pins **Gemini 3.1 Pro (preview)**; use `gemini.flash` (Gemini 3.8 Flash) for cheaper one-shot calls. Structured output is prompt-enforced (Gemini has no schema flag); `withReadOnly` maps to `--approval-mode plan`. See [ADR 0015](adr/0015-gemini-stream-json-driver.md). |
+| `grok` | `fast`, `cheap` (→ fast), `withModel(Model)` | xAI's Grok Build CLI coding/reviewing agent, driven via `grok --output-format streaming-messages-json`. Bare `grok` pins **grok-4.7**; use `grok.fast` (`grok-4.7-build-fast`, an extension from `orca.tools.grok.GrokAgents`) for cheaper one-shot calls. Orca claims the session id itself (`--session-id`), so a session is durable from its first turn. `withReadOnly`, `withNetworkOnly` and `NoTools` are hard `--tools` allowlists; `withAutoApprove(AutoApprove.Only(...))` widens to `--always-approve`, because headless grok cannot ask for an approval. Interactive turns reach Orca's `ask_user` through a temporary `--agent` file that names the MCP bridge. Structured output uses grok's `--json-schema`, and the CLI reports each turn's cost. See [ADR 0025](adr/0025-grok-stream-json-driver.md). |
 | `git` | `push`, `head`, `headCommit`, `isAncestorOfHead`, `branchExists`, `isIgnored`, `uncommittedDiff`, `changedFiles`, `reviewChanges`, `pendingChanges`, `diffVsBase`, `defaultBase`, `show`, `fileAt` | Git reads against the working tree, plus `push`. The runtime owns the run's branch and commits, so branch switching and committing are not on `git`. Commits and branch names are typed (`orca.gitref.CommitHash`, `orca.gitref.BranchName`); `head` answers the branch HEAD is on or the commit it is detached at (`orca.gitref.Head`). Recoverable failures (`NoDefaultBase`, `PushFailure` — `NonFastForward`/`RemoteDeclined`, `GitReadFailed`) surface as `Either`; `.orThrow` converts a `Left` back to an exception when the case is unexpected. `uncommittedDiff` covers the whole repository minus `.orca/` bookkeeping, tracked files only, and is empty once the work is committed — `diffVsBase` is the branch-wide view. `reviewChanges` is what `reviewAndFixLoop` hands reviewers: that diff plus the contents of files new to the repo, together with the list of every path in the change set, how much of each changed, and each file's own part of the diff. It takes an optional commit to compare against (`headCommit` reads one) so work already committed still shows up. `changedFiles` is the path list on its own, for a consumer gating on file names — the diff text alone names neither a binary change nor a rename, and leaves a trailing tab on a path containing a space. `pendingChanges` describes what the next commit will include: a `--stat` summary, the new files, and the diff. `isIgnored` answers `false` when git cannot answer. |
 | `gh` | `availability`, `createPr`, `updatePr`, `readIssue`, `readIssueComments`, `readPrComments`, `writeComment(pr, body)` / `writeComment(issue, body)`, `upsertComment(pr, marker, body)` / `upsertComment(issue, marker, body)`, `buildStatus`, `waitForBuild` | GitHub PR + CI integration via the `gh` CLI. `availability` is a read-only probe of whether a PR can be opened from this checkout, answering with a [`GitHubAvailability`](#data-structures). `createPr` is idempotent by branch (returns the existing PR if one is open); `upsertComment` finds a prior comment carrying `marker` and edits it in place (see [Authoring rules](#authoring-rules) for the re-run pattern). `updatePr` replaces a PR's title + body. `waitForBuild` returns `Either[BuildWaitFailed, …]`. |
 | `fs` | `read`, `write`, `list` | Working-tree file I/O. `read` returns `Option[String]` so a missing file is a branch point, not an exception. `write` refuses a path outside the working tree or under `.orca/runs`, `.orca/cache` or `.orca/worktrees`. |
@@ -361,15 +363,16 @@ val limited =
 `AutoApprove.Only` fits interactive flows, where a human answers anything
 outside the set; an autonomous turn has no one to approve, so an out-of-set call
 blocks. Only claude enforces the set per tool — codex and gemini have no
-per-tool granularity, so there `Only` widens to full auto-approve. For an
+per-tool granularity, and headless grok can't ask for an approval, so there
+`Only` widens to full auto-approve. For an
 unattended run the practical boundary is a sandbox:
 [Sandcat](https://github.com/VirtusLab/sandcat), [Docker
 Sandboxes](https://docs.docker.com/ai/sandboxes/), or any other.
 
 ## Your own agent setup
 
-Orca's agents are ordinary harness sessions — `claude`, `gemini`, `codex`,
-`opencode` or `pi` — started in your repository. They load the same instruction
+Orca's agents are ordinary harness sessions — `claude`, `gemini`, `grok`,
+`codex`, `opencode` or `pi` — started in your repository. They load the same instruction
 files (`~/.claude/CLAUDE.md`, `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`,
 `GEMINI.md`, …), MCP servers, plugins and hooks as your own sessions.
 
@@ -419,8 +422,9 @@ as the defaults:
 flow(OrcaArgs(args), claude = Some(w => ClaudeAgents.default(w).opus))
 ```
 
-Factories exist for all five backends: `ClaudeAgents.default(w)`,
-`CodexAgents.default(w)`, `GeminiAgents.default(w)`, `PiAgents.default(w)`, and
+Factories exist for all six backends: `ClaudeAgents.default(w)`,
+`CodexAgents.default(w)`, `GeminiAgents.default(w)`, `GrokAgents.default(w)`,
+`PiAgents.default(w)`, and
 `OpencodeAgents.default(w, launcher)` — opencode's factory is applied where the
 run's `Ox` scope exists (it pins a shared `opencode serve` to the scope), so its
 slot is typed `AgentWiring => Ox ?=> OpencodeAgent`.
@@ -573,7 +577,7 @@ test = off
 **Agent keys.** `planningAgent`, `codingAgent`, and `reviewAgent`, valid in both
 files, single-valued (a repeated agent key is an error). Value grammar:
 `harness[:model]`, split at the first `:` so a model id containing `:` survives;
-`harness` is one of `claude`, `codex`, `opencode`, `pi`, `gemini` (an
+`harness` is one of `claude`, `codex`, `opencode`, `pi`, `gemini`, `grok` (an
 unrecognised name is an error naming the valid set). The model part is passed
 **verbatim** to the harness's `withModel` — orca does not normalise or validate
 model ids, except that claude's bare `haiku` alias is sent as
@@ -789,7 +793,8 @@ run: the shipped flows mint a session per task and another for the final review,
 and each new one is primed from its seed and the completed-stage preamble.
 
 `agent.cheap` returns the backend's cheap/fast variant (claude → haiku, codex →
-mini, gemini → flash, opencode → anthropicHaiku, others → self) — used by the
+mini, gemini → flash, grok → `grok-4.7-build-fast`, opencode → anthropicHaiku,
+others → self) — used by the
 runtime for branch naming and default commit messages.
 
 **Backend swaps across attempts.** If a settings edit changes a role's agent
@@ -1232,7 +1237,8 @@ off.
 ## Authenticating the coding agents
 
 Each CLI manages its own auth; Orca stores no secrets. Before running a flow,
-log in to the backend you use — `claude`, `codex`, `opencode`, or `pi` — and to
+log in to the backend you use — `claude`, `codex`, `opencode`, `pi`, `gemini`
+or `grok` — and to
 `gh` (for the GitHub helpers), each per its own instructions.
 
 <details>

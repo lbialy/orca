@@ -268,7 +268,7 @@ offers a rewrite (that file otherwise aborts every flow run, so the wizard is
 the natural repair point).
 
 Step 1 — detection: for each harness in `BackendTag` declaration order
-(ClaudeCode, Codex, Opencode, Pi, Gemini — the order every wizard list
+(ClaudeCode, Codex, Opencode, Pi, Gemini, Grok — the order every wizard list
 uses), probe `bash -c 'command -v -- "$1"' bash <name>` (the exact
 `StackDiscovery` shape, extracted into a shared helper; binary names all
 equal the settings names). Undetected harnesses stay selectable — detection
@@ -283,7 +283,7 @@ CLI-resolved ALIASES — `fable`/`opus`/`sonnet` for claude,
 `gpt-5.6-sol`/`-terra`/`-luna` for codex — not raw model ids, so the list
 can't drift the way research 06 §3 worried a curated list would: the CLI
 resolves the alias itself), plus "enter manually…" (free text) and "harness
-default" (no pin) rows. opencode / pi / gemini get free text only, as
+default" (no pin) rows. opencode / pi / gemini / grok get free text only, as
 research 06 §3 anticipated for any future model step; blank input means no
 pin. Preselection: planning defaults to `fable`/`gpt-5.6-sol`, coding/review
 to `opus`/`gpt-5.6-sol`; re-configure preselects an existing pin's curated
@@ -556,7 +556,7 @@ absent when no manifests exist — including the version-skew
 case where the flow ran under a pre-manifest orca pin (§2's fallback path).
 Resume execs
 the harness's own interactive UI from the manifest's `workDir`
-(claude/gemini/opencode scope session lookup by cwd/project; codex's by-id
+(claude/gemini/grok/opencode scope session lookup by cwd/project; codex's by-id
 resume is global, but the resumed context still references that directory):
 
 | harness | command | confidence (research 08, verified against installed CLIs) |
@@ -566,6 +566,7 @@ resume is global, but the resumed context still references that directory):
 | opencode | `opencode --session <ses_…>` | high — TUI shares `opencode serve`'s store |
 | gemini | `gemini --list-sessions` → match uuid → `gemini --resume <index>` | medium — `--resume` takes latest/index, not uuid |
 | pi | `pi --session-dir <workDir>/.orca/cache/pi-sessions/<id> --continue` | medium-high — orca writes the dir itself; inferred from pi's `--continue` semantics, not yet live-verified interactively |
+| grok | `grok --resume <wireId>`, cwd = `workDir` | medium — the wire id is orca's own claimed `--session-id`, and headless `--resume` of it is verified (`INTEGRATE_GROK_BUILD.md` §4); the headless→TUI crossover is not yet live-verified |
 
 > **Amendment (2026-08-27).** The listing spans the checkout the shell was
 > started in plus the worktrees orca made for it (`WorktreeScan.dirs`, the same
