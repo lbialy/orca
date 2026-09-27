@@ -7,6 +7,7 @@ import orca.agents.{
   ClaudeAgent,
   CodexAgent,
   GeminiAgent,
+  GrokAgent,
   OpencodeAgent,
   PiAgent
 }
@@ -14,24 +15,26 @@ import orca.backend.AgentWiring
 import orca.tools.claude.ClaudeAgents
 import orca.tools.codex.CodexAgents
 import orca.tools.gemini.GeminiAgents
+import orca.tools.grok.GrokAgents
 import orca.tools.opencode.OpencodeAgents
 import orca.tools.pi.PiAgents
 import ox.{ResourceScope, releaseAfterScope}
 
-/** The five agents wired for one attempt — the [[orca.AgentSet]] the
-  * `flow(...)` lead selector resolves against. Built (via
-  * [[WiredAgents.build]]) before the `FlowContext` exists; the attempt's
-  * resource scope closes them (see [[WiredAgents.closeAfterScope]]).
+/** The six agents wired for one attempt — the [[orca.AgentSet]] the `flow(...)`
+  * lead selector resolves against. Built (via [[WiredAgents.build]]) before the
+  * `FlowContext` exists; the attempt's resource scope closes them (see
+  * [[WiredAgents.closeAfterScope]]).
   */
 private[orca] final class WiredAgents(
     val claude: ClaudeAgent,
     val codex: CodexAgent,
     val opencode: OpencodeAgent,
     val pi: PiAgent,
-    val gemini: GeminiAgent
+    val gemini: GeminiAgent,
+    val grok: GrokAgent
 ) extends AgentSet:
 
-  /** The five wired agents keyed by backend tag, derived from
+  /** The six wired agents keyed by backend tag, derived from
     * [[AgentSet.agentFor]] — the single place the tag-to-agent mapping is
     * written out — rather than restating it here.
     */
@@ -42,9 +45,9 @@ private[orca] final class WiredAgents(
     */
   def all: List[Agent[?]] = byTag.values.toList
 
-  /** True when `a` runs on one of the five wired backends — a wired agent
-    * itself or a builder-derived sibling (`_.claude.opus`, `.withReadOnly`, …).
-    * Used only for the foreign-lead warning.
+  /** True when `a` runs on one of the six wired backends — a wired agent itself
+    * or a builder-derived sibling (`_.claude.opus`, `.withReadOnly`, …). Used
+    * only for the foreign-lead warning.
     */
   def isWiredBackend(a: Agent[?]): Boolean = all.exists(_.sharesBackendWith(a))
 
@@ -74,7 +77,10 @@ private[orca] object WiredAgents:
         wiring.pi.map(_(agentWiring)).getOrElse(PiAgents.default(agentWiring)),
       gemini = wiring.gemini
         .map(_(agentWiring))
-        .getOrElse(GeminiAgents.default(agentWiring))
+        .getOrElse(GeminiAgents.default(agentWiring)),
+      grok = wiring.grok
+        .map(_(agentWiring))
+        .getOrElse(GrokAgents.default(agentWiring))
     )
 
   /** Closes `agents` when the enclosing scope ends. */

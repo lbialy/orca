@@ -44,6 +44,13 @@ class ResumeCommandTest extends munit.FunSuite:
       Right(Seq("opencode", "--session", id))
     )
 
+  test("grok resumes via `grok --resume <uuid>`"):
+    val uuid = "01a0e2b4-43af-70a2-9279-9bbff25a5505"
+    assertEquals(
+      build(session(BackendTag.Grok, Some(uuid))),
+      Right(Seq("grok", "--resume", uuid))
+    )
+
   test("gemini resumes via `gemini --resume <index>` once the index is known"):
     val uuid = "aaaa1234-5678-4abc-9def-000000000003"
     assertEquals(

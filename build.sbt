@@ -174,7 +174,8 @@ lazy val runner = (project in file("runner"))
     codex,
     opencode,
     pi,
-    gemini
+    gemini,
+    grok
   )
   .settings(commonSettings)
   .settings(

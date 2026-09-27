@@ -30,6 +30,7 @@ export orca.agents.{
   OpencodeAgent,
   PiAgent,
   GeminiAgent,
+  GrokAgent,
   AgentCall,
   AutonomousAgentCall,
   InteractiveAgentCall,
@@ -126,6 +127,8 @@ export orca.tools.codex.CodexAgents
 export orca.tools.codex.CodexAgents.mini
 export orca.tools.gemini.GeminiAgents
 export orca.tools.gemini.GeminiAgents.flash
+export orca.tools.grok.GrokAgents
+export orca.tools.grok.GrokAgents.fast
 export orca.tools.pi.PiAgents
 export orca.tools.opencode.OpencodeAgents
 export orca.tools.opencode.OpencodeAgents.{

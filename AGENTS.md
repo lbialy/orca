@@ -18,7 +18,7 @@ orca/
 ├── build.sbt / project/
 ├── tools/      # tool traits + os-backed impls (git/gh/fs), internal LLM SPI + session durability, InStage, events, subprocess, sweep
 ├── flow/       # stage/display/fail + FlowContext/FlowControl; orca.{plan,review,pr,progress}
-├── claude/ codex/ gemini/ opencode/ pi/   # one module per coding-agent backend
+├── claude/ codex/ gemini/ grok/ opencode/ pi/   # one module per coding-agent backend
 ├── runner/     # flow() entry, DefaultFlowContext/DefaultFlowControl, FlowLifecycle, terminal UI
 └── shell/      # `orca-shell`, the `orca` CLI's interactive front-end (ADR 0021)
 ```
@@ -28,9 +28,9 @@ Dependency graph:
 ```
 tools   (standalone)
   ├── flow                          → tools
-  ├── claude / codex / gemini /
+  ├── claude / codex / gemini / grok /
   │     opencode / pi               → tools
-  ├── runner                        → tools + flow + all five backends
+  ├── runner                        → tools + flow + all six backends
   └── shell                         → runner (published `orca`)
 ```
 
@@ -125,7 +125,7 @@ most easily broken:
   orca's per-run `opencode serve` process, so a fresh server spawned after a
   kill/restart resumes a committed `resumeWireId` the same way the file-probed
   backends do, live-verified 2026-07-08) — and the `IdScheme`: `ClientClaimed`
-  (claude/pi — the client id IS the wire id, put on the wire at spawn) or
+  (claude/grok/pi — the client id IS the wire id, put on the wire at spawn) or
   `ServerMinted` (codex/gemini/opencode — the server mints the wire id, learned
   from the protocol and registered after the turn). `Agent` is a final class
   over one `AgentBackend` instance; its `dispatchFor` / `resumeWireId` /
@@ -233,13 +233,13 @@ most easily broken:
   which walks the full (backend × ToolSet × AutoApprove × dispatch) product.
   Don't hand-edit it: when the test fails, paste the block it prints.
 
-  | tools, approve         | ClaudeCode | Codex         | Opencode | Pi         | Gemini     |
-  |------------------------|------------|---------------|----------|------------|------------|
-  | ReadOnly, *            | Hard       | Hard          | Hard     | Hard       | PromptOnly |
-  | NetworkOnly, *         | Hard       | PromptOnly    | Hard     | PromptOnly | PromptOnly |
-  | Full, All              | Hard       | Hard          | Ignored  | Ignored    | Hard       |
-  | Full, Only(_) / Only() | Hard       | SandboxApprox | Ignored  | Ignored    | Ignored    |
-  | NoTools, *             | Hard       | PromptOnly    | Hard     | Hard       | PromptOnly |
+  | tools, approve         | ClaudeCode | Codex         | Opencode | Pi         | Gemini     | Grok    |
+  |------------------------|------------|---------------|----------|------------|------------|---------|
+  | ReadOnly, *            | Hard       | Hard          | Hard     | Hard       | PromptOnly | Hard    |
+  | NetworkOnly, *         | Hard       | PromptOnly    | Hard     | PromptOnly | PromptOnly | Hard    |
+  | Full, All              | Hard       | Hard          | Ignored  | Ignored    | Hard       | Hard    |
+  | Full, Only(_) / Only() | Hard       | SandboxApprox | Ignored  | Ignored    | Ignored    | Ignored |
+  | NoTools, *             | Hard       | PromptOnly    | Hard     | Hard       | PromptOnly | Hard    |
 
   A resumed turn is classified the same, except:
   - Codex, Full, Only(_) / Only(): Ignored, not SandboxApprox
@@ -261,6 +261,7 @@ most easily broken:
   - codex: `network_access=true` inside the `workspace-write` sandbox — codex
     has no read-only-with-network sandbox.
   - gemini: `web_fetch` pre-approved through `--allowed-tools`.
+  - grok: `web_search` / `web_fetch` added to the read tools on `--tools`.
   - opencode: `webfetch` left unset, so the server's own default decides
     (`ReadOnly` disables it by name).
   - pi: `bash` — pi has no web tool, and `bash` also writes.
@@ -313,7 +314,7 @@ Three location classes decide what survives:
 | `.orca/cache/{,runs/,attempts/}.<file>.<uuid>.tmp` | cache | in-flight temp of an `OrcaFile` replace: beside a cache file, in `.orca/cache/` for a committed one (progress log, settings) so it is never committed | `OrcaDir.OrcaFile` | — (`AttemptManifestWriter`'s pruning skips dot-files) | the rename that completes the write |
 | `.orca/worktrees/<key>/` (+ branch `orca-worktree-<key>`) | worktrees | a `--worktree` run's checkout, with its own `.orca/` inside | `WorktreeRun` | `WorktreeScan` (shell) | never — see README |
 | `<workDir>/.gemini/settings.json` | user tree | an `mcpServers.orca` entry for one interactive gemini turn | `GeminiSettings` | gemini | restored at turn end, and a stale entry from a crash dropped at the next interactive turn; a `.gemini/` orca created is removed when left empty |
-| `$TMPDIR/orca-*` (system prompts, claude MCP config, codex schema, pi extension) | temp | per-turn IPC files handed to a CLI on argv | each backend | the CLI | turn end |
+| `$TMPDIR/orca-*` (system prompts, claude MCP config, codex schema, pi extension, grok prompt and `--agent` files) | temp | per-turn IPC files handed to a CLI on argv | each backend | the CLI | turn end |
 | `$TMPDIR/orca-authoring-<n>/` | temp | the authoring flow's sandbox repo; `.orca/cache/orca-api-<version>/` inside holds the README + example flows (+ `fork-source/`) | `AuthoringSandbox`, `FlowAuthoring` | the coding agent | success or cancel; kept on failure, and nothing else prunes it |
 | `$XDG_CACHE_HOME/orca/shell/<version>/flows/` | XDG cache | built-in flows extracted from the jar | `BuiltInFlows` | `FlowCatalog`, scala-cli | never; nothing prunes older versions |
 | `$XDG_CACHE_HOME/orca/shell/workspace/` | XDG cache | scala-cli `--workspace` build state | scala-cli | scala-cli | never; nothing prunes it |

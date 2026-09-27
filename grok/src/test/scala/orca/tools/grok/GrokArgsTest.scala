@@ -8,7 +8,7 @@ import orca.agents.{
   ToolSet,
   TurnDispatch
 }
-import orca.backend.TurnMode
+import orca.backend.{Dispatch, TurnMode}
 
 class GrokArgsTest extends munit.FunSuite:
 
@@ -95,22 +95,27 @@ class GrokArgsTest extends munit.FunSuite:
     )
 
   test("interactive turns keep search_tool and use_tool reachable"):
-    for tools <- Seq(ToolSet.ReadOnly, ToolSet.NetworkOnly, ToolSet.Full) do
+    for tools <- ToolSet.values do
       val stripped =
         listOf(wiring(tools, mode = interactive).args, "--disallowed-tools")
       assert(!stripped.contains("search_tool"), s"$tools: $stripped")
       assert(!stripped.contains("use_tool"), s"$tools: $stripped")
 
-  test("NoTools names todo_write and then disallows it with the meta-tools"):
+  test("NoTools names todo_write and then disallows it"):
     for mode <- modes do
       val args = wiring(ToolSet.NoTools, mode = mode).args
       assertEquals(valuesOf(args, "--tools"), Seq("todo_write"))
-      assert(
-        Seq("todo_write", "search_tool", "use_tool")
-          .forall(listOf(args, "--disallowed-tools").contains),
-        args.toString
-      )
+      assert(listOf(args, "--disallowed-tools").contains("todo_write"), args)
       assert(args.contains("--no-subagents"), args.toString)
+
+  test("autonomous NoTools turns also disallow the meta-tools"):
+    val stripped = listOf(wiring(ToolSet.NoTools).args, "--disallowed-tools")
+    assert(Seq("search_tool", "use_tool").forall(stripped.contains), stripped)
+
+  test("sessionArgs refuses a fresh dispatch with no claim id"):
+    val _ = intercept[IllegalStateException](
+      GrokArgs.sessionArgs(Dispatch.Fresh(None))
+    )
 
   test("autonomous turns strip ask_user_question and background tools"):
     for tools <- ToolSet.values do

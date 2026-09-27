@@ -40,7 +40,9 @@ private[terminal] object ReadOnlyTools:
     "read_file",
     "read_many_files",
     "search_file_content",
-    "list_directory"
+    "list_directory",
+    // grok (also `read_file`, `grep`)
+    "list_dir"
   )
 
   def contains(toolName: String): Boolean =

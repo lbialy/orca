@@ -1,13 +1,15 @@
 package orca.tools.grok
 
-import orca.backend.{CliArgs, TurnMode}
+import orca.backend.{CliArgs, Dispatch, TurnMode}
 import orca.agents.{
   AgentConfig,
   AutoApprove,
+  BackendTag,
   Enforcement,
   EnforcementCell,
   ToolSet,
-  TurnDispatch
+  TurnDispatch,
+  WireSessionId
 }
 
 /** Maps `AgentConfig` fields to `grok` headless CLI flags
@@ -67,14 +69,15 @@ private[grok] object GrokArgs:
           allowlistCell(ReadTools ++ WebTools)
         )
       // An empty `--tools` disables filtering, so name a real tool and then
-      // disallow it. NoTools attaches no MCP server, so the meta-tools always go.
+      // disallow it. An interactive turn keeps the meta-tools, its only route
+      // to orca's `ask_user`, as the allowlist tiers do.
       case ToolSet.NoTools =>
         Wiring(
           allow(Seq(TodoWrite)) ++
-            disallow(TodoWrite +: (MetaTools ++ unattended)),
+            disallow(TodoWrite +: (meta ++ unattended)),
           EnforcementCell(
             Enforcement.Hard,
-            "`--tools todo_write --disallowed-tools todo_write,search_tool,use_tool` (grok 1.0.41, probed 2026-09-27) left init `tools: []`; a bare `--tools \"\"` would instead have kept every tool"
+            "`--tools todo_write --disallowed-tools todo_write,search_tool,use_tool` (grok 1.0.41, probed 2026-09-27) left init `tools: []`; a bare `--tools \"\"` would instead have kept every tool. Interactive turns keep `search_tool,use_tool` for orca's `ask_user`, which also leaves other MCP servers from the user's grok config reachable — unprobed"
           )
         )
       // `--always-approve` is mandatory: without it, headless `default` mode
@@ -131,7 +134,7 @@ private[grok] object GrokArgs:
       wiring(tools, autoApprove, TurnMode.Autonomous).cell
 
   /** One headless turn. cwd is set on the process spawn, so it isn't rendered;
-    * `sessionFlags` are the `--session-id` / `--resume` pair for the turn.
+    * `sessionFlags` are the turn's [[sessionArgs]].
     */
   def argv(
       config: AgentConfig,
@@ -157,3 +160,19 @@ private[grok] object GrokArgs:
       wiring.args ++
       CliArgs.flag("--json-schema", outputSchema)(identity) ++
       CliArgs.flag("--agent", agentFile)(_.toString)
+
+  /** Fresh dispatch → `--session-id <uuid>`, creating the session under orca's
+    * id; resume → `--resume <uuid>` (grok refuses to re-claim an id it holds).
+    */
+  def sessionArgs(dispatch: Dispatch[BackendTag.Grok.type]): Seq[String] =
+    dispatch match
+      case Dispatch.Fresh(Some(id)) =>
+        Seq("--session-id", WireSessionId.value(id))
+      // Unreachable: grok is `IdScheme.ClientClaimed`, which always supplies
+      // the claim id on a fresh dispatch. Fails loudly rather than letting grok
+      // mint an id orca never learns.
+      case Dispatch.Fresh(None) =>
+        throw new IllegalStateException(
+          "grok's ClientClaimed scheme must supply a fresh claim id"
+        )
+      case Dispatch.Resume(id, _) => Seq("--resume", WireSessionId.value(id))

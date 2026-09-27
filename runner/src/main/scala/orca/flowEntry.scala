@@ -17,6 +17,7 @@ import orca.agents.{
   CodexAgent,
   DefaultPrompts,
   GeminiAgent,
+  GrokAgent,
   OpencodeAgent,
   PiAgent,
   Prompts
@@ -141,6 +142,7 @@ def flow(
     opencode: Option[AgentWiring => Ox ?=> OpencodeAgent] = None,
     pi: Option[AgentWiring => Ox ?=> PiAgent] = None,
     gemini: Option[AgentWiring => Ox ?=> GeminiAgent] = None,
+    grok: Option[AgentWiring => Ox ?=> GrokAgent] = None,
     gh: Option[GitHubTool] = None,
     fs: Option[FsTool] = None,
     prompts: Prompts = DefaultPrompts,
@@ -232,6 +234,7 @@ def flow(
                   opencode = opencode,
                   pi = pi,
                   gemini = gemini,
+                  grok = grok,
                   gh = gh,
                   fs = fs,
                   prompts = prompts

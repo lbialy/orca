@@ -9,6 +9,7 @@ import orca.agents.{
   ClaudeAgent,
   CodexAgent,
   GeminiAgent,
+  GrokAgent,
   OpencodeAgent,
   PiAgent
 }
@@ -22,6 +23,7 @@ def codex(using ctx: FlowContext): CodexAgent = ctx.codex
 def opencode(using ctx: FlowContext): OpencodeAgent = ctx.opencode
 def pi(using ctx: FlowContext): PiAgent = ctx.pi
 def gemini(using ctx: FlowContext): GeminiAgent = ctx.gemini
+def grok(using ctx: FlowContext): GrokAgent = ctx.grok
 def git(using ctx: FlowContext): GitTool = ctx.git
 def gh(using ctx: FlowContext): GitHubTool = ctx.gh
 def fs(using ctx: FlowContext): FsTool = ctx.fs

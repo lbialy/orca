@@ -14,7 +14,7 @@ import com.github.plokhotnyuk.jsoniter_scala.macros.{
   * Persisted (session records, attempt manifests) and emitted as its case name.
   */
 enum BackendTag:
-  case ClaudeCode, Codex, Opencode, Pi, Gemini
+  case ClaudeCode, Codex, Opencode, Pi, Gemini, Grok
 
 object BackendTag:
   given codec: ConfiguredJsonValueCodec[BackendTag] =

@@ -219,7 +219,8 @@ class WizardTest extends munit.FunSuite:
           BackendTag.Codex,
           BackendTag.Opencode,
           BackendTag.Pi,
-          BackendTag.Gemini
+          BackendTag.Gemini,
+          BackendTag.Grok
         )
       assertEquals(harnessMenus, List.fill(3)(expectedOrder))
 

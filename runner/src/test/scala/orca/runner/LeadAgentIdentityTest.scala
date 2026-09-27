@@ -10,6 +10,7 @@ import orca.agents.{
   ClaudeAgent,
   CodexAgent,
   GeminiAgent,
+  GrokAgent,
   OpencodeAgent,
   PiAgent
 }
@@ -25,7 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
 /** Pins the foreign-agent handling: a per-role override (`codingAgent =
   * Some(...)`) can return an agent built from a backend that isn't wired into
   * this run — event-blind (built against its own `AgentWiring`, not this run's
-  * dispatcher). `runFlow` closes all five wired agents and every foreign role
+  * dispatcher). `runFlow` closes all six wired agents and every foreign role
   * agent when the run ends, so a foreign role agent's backend is closed too.
   * `runFlow` separately warns per role when it resolves a foreign agent,
   * comparing backends ([[orca.agents.Agent.sharesBackendWith]]), not `Agent`
@@ -133,12 +134,12 @@ class LeadAgentIdentityTest extends munit.FunSuite:
 
   test(
     "a selector that always throws: the original failure is reported once, " +
-      "and all five wired backends are still closed"
+      "and all six wired backends are still closed"
   ):
     // The selector resolves pre-context, against the wired agent set, inside
     // `runFlow`'s pre-context `surfaced` bracket: its failure is reported as
     // exactly one Error and escapes as `ReportedFailure(boom)`. The
-    // context is never constructed, yet the five wired agents must be closed.
+    // context is never constructed, yet the six wired agents must be closed.
     val boom = new RuntimeException("selector always throws")
     val selector: AgentSet => orca.agents.Agent[BackendTag.ClaudeCode.type] =
       _ => throw boom
@@ -160,7 +161,8 @@ class LeadAgentIdentityTest extends munit.FunSuite:
               codex = Some(_ => agents.codex),
               opencode = Some(_ => agents.opencode),
               pi = Some(_ => agents.pi),
-              gemini = Some(_ => agents.gemini)
+              gemini = Some(_ => agents.gemini),
+              grok = Some(_ => agents.grok)
             )
           )
         ):
@@ -181,7 +183,8 @@ class LeadAgentIdentityTest extends munit.FunSuite:
         BackendTag.Codex,
         BackendTag.Opencode,
         BackendTag.Pi,
-        BackendTag.Gemini
+        BackendTag.Gemini,
+        BackendTag.Grok
       )
     do
       assert(
@@ -195,7 +198,7 @@ class LeadAgentIdentityTest extends munit.FunSuite:
       "the earlier foreign planning backend is still closed"
   ):
     // Planning resolves to a FOREIGN agent (a separate backend, not one of the
-    // five wired); coding's override then throws, so `resolveAll` never returns
+    // six wired); coding's override then throws, so `resolveAll` never returns
     // a `RoleResolution`. The foreign planning agent's close, registered as
     // that role resolved, must still run.
     val boom = new RuntimeException("coding selector always throws")
@@ -219,7 +222,8 @@ class LeadAgentIdentityTest extends munit.FunSuite:
               codex = Some(_ => agents.codex),
               opencode = Some(_ => agents.opencode),
               pi = Some(_ => agents.pi),
-              gemini = Some(_ => agents.gemini)
+              gemini = Some(_ => agents.gemini),
+              grok = Some(_ => agents.grok)
             )
           )
         ):
@@ -252,12 +256,14 @@ class LeadAgentIdentityTest extends munit.FunSuite:
     private val opencodeBackend = ScriptedBackend.unused(BackendTag.Opencode)
     private val piBackend = ScriptedBackend.unused(BackendTag.Pi)
     private val geminiBackend = ScriptedBackend.unused(BackendTag.Gemini)
+    private val grokBackend = ScriptedBackend.unused(BackendTag.Grok)
 
     val claude: ClaudeAgent = TestAgent(claudeBackend)
     val codex: CodexAgent = TestAgent(codexBackend)
     val opencode: OpencodeAgent = TestAgent(opencodeBackend)
     val pi: PiAgent = TestAgent(piBackend)
     val gemini: GeminiAgent = TestAgent(geminiBackend)
+    val grok: GrokAgent = TestAgent(grokBackend)
 
     def closed(tag: BackendTag): Boolean = tag match
       case BackendTag.ClaudeCode => claudeBackend.isClosed
@@ -265,6 +271,7 @@ class LeadAgentIdentityTest extends munit.FunSuite:
       case BackendTag.Opencode   => opencodeBackend.isClosed
       case BackendTag.Pi         => piBackend.isClosed
       case BackendTag.Gemini     => geminiBackend.isClosed
+      case BackendTag.Grok       => grokBackend.isClosed
 
   private class RecordingListener extends OrcaListener:
     private val seen = new AtomicReference[List[OrcaEvent]](Nil)

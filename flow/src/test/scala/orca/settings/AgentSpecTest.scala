@@ -23,6 +23,16 @@ class AgentSpecTest extends FunSuite:
       Right(AgentSpec(BackendTag.Gemini, Some("gemini-2.5-pro")))
     )
 
+  test("parse reads grok, bare and with a model pin"):
+    assertEquals(
+      AgentSpec.parse("grok"),
+      Right(AgentSpec(BackendTag.Grok, None))
+    )
+    assertEquals(
+      AgentSpec.parse("grok:grok-4.7-build-fast"),
+      Right(AgentSpec(BackendTag.Grok, Some("grok-4.7-build-fast")))
+    )
+
   test("parse of the empty string is a Left"):
     assert(AgentSpec.parse("").isLeft)
 

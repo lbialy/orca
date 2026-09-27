@@ -13,7 +13,7 @@ class AccessorsTest extends munit.FunSuite:
 
   test("every tool accessor forwards to the context"):
     given FlowContext = ctxWith("")
-    // TestFlowContext stubs all five tools with NotImplementedError; each
+    // TestFlowContext stubs every tool with NotImplementedError; each
     // accessor must therefore throw rather than return some default.
     val _ = intercept[NotImplementedError](claude)
     val _ = intercept[NotImplementedError](codex)
